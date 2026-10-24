@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard | Procurement System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body data-api-url="<%= ResolveUrl("Api.ashx")%>" >
+    <div class="app">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <a class="brand" href="dashboard.html">
+                <span class="brand-mark">▣</span>
+                <span>Procurement<small>MANAGEMENT SYSTEM</small></span>
+            </a>
+
+            <div class="nav-label">เมนูหลัก</div>
+            <nav class="nav">
+                <a class="active" href="dashboard.html"><span class="nav-icon">⌂</span>Dashboard</a>
+                <a href="requisitions.html"><span class="nav-icon">▤</span>ใบขอซื้อ</a>
+                <a href="requisition-create.html"><span class="nav-icon">＋</span>สร้างใบขอซื้อ</a>
+                <a href="approvals.html"><span class="nav-icon">✓</span>อนุมัติใบขอซื้อ</a>
+                <a href="purchase-orders.html"><span class="nav-icon">▣</span>ใบสั่งซื้อ</a>
+                <a href="goods-receipts.html"><span class="nav-icon">⇩</span>รับสินค้า</a>
+                
+                <a href="profile.html"><span class="nav-icon">⚙</span>โปรไฟล์ / ตั้งค่า</a>
+            </nav>
+
+
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main">
+            <!-- Topbar -->
+
+            <header class="topbar">
+                <div class="crumb">
+                    Procurement / <strong>Dashboard</strong>
+                </div>
+
+                <div class="top-user">
+                    <span class="avatar" id="currentUserAvatar">A</span>
+
+                    <div class="user-info">
+                        <span class="user-name" id="currentUserName">
+                            กำลังโหลด...
+                        </span>
+                        <small id="currentUserRole"></small>
+                    </div>
+                </div>
+            </header>
+
+
+            <!-- Main Section Content -->
+            <section class="content">
+                <!-- Page Header -->
+                <div class="page-head">
+                    <div>
+                        <div class="eyebrow">ภาพรวมการดำเนินงาน</div>
+                        <h1>Dashboard</h1>
+                        <p>ภาพรวมระบบจัดซื้อจัดจ้างและสถานะล่าสุด</p>
+                    </div>
+                    <a class="btn" href="requisition-create.html">＋ สร้างใบขอซื้อ</a>
+                </div>
+
+                <!-- Key Metrics Cards -->
+                <div class="grid stats">
+                    <article class="card stat">
+                        <div class="stat-top">
+                            ใบขอซื้อทั้งหมด <span class="stat-icon">▤</span>
+                        </div>
+                        <div class="stat-value" id="requisitions-count">กำลังโหลด...</div>
+                        <div class="stat-note">จำนวนใบขอซื้อในระบบ</div>
+                    </article>
+
+                    <article class="card stat">
+                        <div class="stat-top">
+                            ใบสั่งซื้อ <span class="stat-icon">▣</span>
+                        </div>
+                        <div class="stat-value" id="purchase-orders-count">กำลังโหลด...</div>
+                        <div class="stat-note">จำนวนใบสั่งซื้อในระบบ</div>
+                    </article>
+
+                    <article class="card stat">
+                        <div class="stat-top">
+                            รออนุมัติ <span class="stat-icon">◷</span>
+                        </div>
+                        <div class="stat-value" id="pending-count">กำลังโหลด...</div>
+                        <div class="stat-note">ใบขอซื้อที่รออนุมัติ</div>
+                    </article>
+
+                    <article class="card stat">
+                        <div class="stat-top">
+                            งบประมาณคงเหลือ <span class="stat-icon">฿</span>
+                        </div>
+                        <div class="stat-value" id="budget-remaining">กำลังโหลด...</div>
+                        <div class="stat-note" id="budget-detail">
+                            กำลังโหลดข้อมูลงบประมาณ...
+                        </div>
+                    </article>
+                </div>
+
+
+                <!-- Charts and Pending Items -->
+                <div class="grid two-col">
+                    <!-- Bar Chart Section -->
+                    <section class="card section">
+                        <div class="section-head">
+                          
+                        </div>
+                        <div class="chart-placeholder" id="monthly-chart">
+                            <p>กำลังโหลดข้อมูล...</p>
+                        </div>
+                        <div class="legend">
+                            <span>
+                                <i class="dot"></i>
+                                จำนวนใบขอซื้อ
+                            </span>
+                        </div>
+                    </section>
+
+                    <!-- Pending Requests Table -->
+                    <section class="card section">
+                        <div class="section-head">
+                            <h2>รายการรอดำเนินการ</h2>
+                            <a href="approvals.html">ดูทั้งหมด →</a>
+                        </div>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>เลขที่</th>
+                                        <th>แผนก</th>
+                                        <th>ยอดรวม</th>
+                                        <th>สถานะ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pending-list">
+                                    <tr>
+                                        <td colspan="4" style="text-align: center;">
+                                            กำลังโหลดข้อมูล...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Recent Activities Section -->
+                <section class="card section">
+                    <div class="section-head">
+                        <h2>กิจกรรมล่าสุด</h2>
+                        <span class="muted">ข้อมูลจากระบบ</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>กิจกรรม</th>
+                                    <th>ผู้ดำเนินการ</th>
+                                    <th>วันที่</th>
+                                    <th>สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activity-list">
+                                <tr>
+                                    <td colspan="4" style="text-align: center;">
+                                        กำลังโหลดข้อมูล...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js">
+    </script>
+</body>
+</html>

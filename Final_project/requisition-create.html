@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>สร้างใบขอซื้อ | Procurement System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <a class="brand" href="dashboard.html">
+                <span class="brand-mark">▣</span>
+                <span>Procurement<small>MANAGEMENT SYSTEM</small></span>
+            </a>
+            <div class="nav-label">เมนูหลัก</div>
+            <nav class="nav">
+                <a class="" href="dashboard.html">
+                    <span class="nav-icon">⌂</span>Dashboard
+                </a>
+                <a class="" href="requisitions.html">
+                    <span class="nav-icon">▤</span>ใบขอซื้อ
+                </a>
+                <a class="active" href="requisition-create.html">
+                    <span class="nav-icon">＋</span>สร้างใบขอซื้อ
+                </a>
+                <a class="" href="approvals.html">
+                    <span class="nav-icon">✓</span>อนุมัติใบขอซื้อ
+                </a>
+                <a class="" href="purchase-orders.html">
+                    <span class="nav-icon">▣</span>ใบสั่งซื้อ
+                </a>
+                <a class="" href="goods-receipts.html">
+                    <span class="nav-icon">⇩</span>รับสินค้า
+                </a>
+                <a class="" href="profile.html">
+                    <span class="nav-icon">⚙</span>โปรไฟล์ / ตั้งค่า
+                </a>
+            </nav>
+
+
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="crumb">
+                    Procurement / <strong>สร้างใบขอซื้อ</strong>
+                </div>
+                <div class="top-user">
+                    <span class="avatar" id="currentUserAvatar">U</span>
+                    <div class="user-info">
+                        <span class="user-name" id="currentUserName">กำลังโหลด...</span>
+                        <small id="currentUserRole"></small>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content">
+                <div class="page-head">
+                    <div>
+                        <div class="eyebrow">Purchase request</div>
+                        <h1>สร้างใบขอซื้อ</h1>
+                        <p>กรอกข้อมูลผู้ขอซื้อและรายการสินค้าที่ต้องการ</p>
+                    </div>
+                    <a class="btn secondary" href="requisitions.html">← กลับรายการ</a>
+                </div>
+
+
+                <form id="requisition-form" class="card form-card">
+                    <h2 class="form-section-title">ข้อมูลใบขอซื้อ</h2>
+
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="requester_staff_id">ผู้ขอซื้อ</label>
+                            <select id="requester_staff_id" required>
+                                <option value="">กำลังโหลดรายชื่อ...</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label for="budget_id">งบประมาณ / แผนก</label>
+                            <select id="budget_id" required>
+                                <option value="">กำลังโหลดงบประมาณ...</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label for="preferred_vendor_id">ผู้ขายที่ต้องการ (ไม่บังคับ)</label>
+                            <select id="preferred_vendor_id">
+                                <option value="">ไม่ระบุผู้ขาย</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label for="purpose">เหตุผล / วัตถุประสงค์</label>
+                            <input id="purpose" maxlength="255"
+                                   placeholder="ระบุเหตุผลในการขอซื้อ" required>
+                        </div>
+                    </div>
+
+                    <h2 class="form-section-title" style="margin-top:18px">
+                        รายการสินค้า
+                    </h2>
+
+                    <div id="request-items"></div>
+
+                    <button id="add-request-item" class="btn secondary"
+                            type="button">
+                        ＋ เพิ่มรายการสินค้า
+                    </button>
+
+
+                    <div class="summary vat-summary">
+                        <div class="vat-summary-heading">
+                            <h3>สรุปยอดเงิน</h3>
+                            <small>คำนวณ VAT 7% จากยอดก่อนภาษี</small>
+                        </div>
+
+                        <div class="vat-summary-row">
+                            <span>ยอดรวมก่อน VAT</span>
+                            <strong id="request-total">฿0.00</strong>
+                        </div>
+
+                        <div class="vat-summary-row">
+                            <span>VAT (7%)</span>
+                            <strong id="request-vat">฿0.00</strong>
+                        </div>
+
+                        <div class="vat-summary-row vat-grand-total">
+                            <span>ยอดรวมสุทธิ</span>
+                            <strong id="request-grand-total">฿0.00</strong>
+                        </div>
+                    </div>
+
+
+                    <div id="request-message" class="notice"
+                         role="status" aria-live="polite"></div>
+
+                    <div class="form-actions">
+                        <a class="btn secondary" href="requisitions.html">
+                            ยกเลิก
+                        </a>
+                        <button id="submit-requisition" class="btn" type="submit">
+                            บันทึกใบขอซื้อ
+                        </button>
+                    </div>
+                </form>
+
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

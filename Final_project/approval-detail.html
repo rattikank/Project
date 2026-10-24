@@ -1,0 +1,359 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>รายละเอียดใบขอซื้อ | Procurement System</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        /* Summary */
+        .detail-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px 24px;
+        }
+
+            .detail-summary p {
+                margin: 0;
+                line-height: 1.8;
+                overflow-wrap: anywhere;
+            }
+
+            .detail-summary strong {
+                margin-right: 6px;
+            }
+
+        /* Table */
+        .detail-table th,
+        .detail-table td {
+            padding: 14px 16px;
+            vertical-align: middle;
+        }
+
+            .detail-table th:first-child,
+            .detail-table td:first-child {
+                text-align: center;
+                width: 70px;
+            }
+
+        .detail-table .number {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .detail-table .empty-row {
+            text-align: center;
+            padding: 28px 16px;
+            color: #6b7280;
+        }
+
+        /* Total summary */
+        .total-summary {
+            display: flex;
+            justify-content: flex-end;
+            padding: 20px 24px;
+        }
+
+        .total-box {
+            width: 100%;
+            max-width: 360px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 16px;
+            padding: 5px 0;
+        }
+
+            .total-row strong {
+                white-space: nowrap;
+                text-align: right;
+            }
+
+        .total-grand {
+            margin-top: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+            font-size: 1.12rem;
+        }
+
+        /* Approval */
+        .approval-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 560px;
+        }
+
+        .approval-field label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .approval-field textarea {
+            width: 100%;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+
+        .approval-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+            .approval-actions button {
+                min-width: 120px;
+                cursor: pointer;
+            }
+
+                .approval-actions button:disabled {
+                    cursor: not-allowed;
+                    opacity: 0.6;
+                }
+
+        @media (max-width: 640px) {
+            .detail-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .total-summary {
+                padding: 16px;
+            }
+
+            .detail-table th,
+            .detail-table td {
+                padding: 10px;
+            }
+
+            .approval-actions button {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <a class="brand" href="dashboard.html">
+                <span class="brand-mark">▣</span>
+                <span>
+                    Procurement
+                    <small>MANAGEMENT SYSTEM</small>
+                </span>
+            </a>
+
+            <div class="nav-label">เมนูหลัก</div>
+
+            <nav class="nav">
+                <a href="dashboard.html">
+                    <span class="nav-icon">⌂</span>Dashboard
+                </a>
+
+                <a href="requisitions.html">
+                    <span class="nav-icon">▤</span>ใบขอซื้อ
+                </a>
+
+                <a href="requisition-create.html">
+                    <span class="nav-icon">＋</span>สร้างใบขอซื้อ
+                </a>
+
+                <a class="active" href="approvals.html">
+                    <span class="nav-icon">✓</span>อนุมัติใบขอซื้อ
+                </a>
+
+                <a href="purchase-orders.html">
+                    <span class="nav-icon">▣</span>ใบสั่งซื้อ
+                </a>
+
+                <a href="goods-receipts.html">
+                    <span class="nav-icon">⇩</span>รับสินค้า
+                </a>
+
+                <a href="profile.html">
+                    <span class="nav-icon">⚙</span>โปรไฟล์ / ตั้งค่า
+                </a>
+            </nav>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="crumb">
+                    Procurement /
+                    <a href="approvals.html">อนุมัติใบขอซื้อ</a> /
+                    <strong>รายละเอียด</strong>
+                </div>
+
+                <div class="top-user">
+                    <span class="avatar" id="currentUserAvatar">U</span>
+
+                    <div class="user-info">
+                        <span class="user-name" id="currentUserName">
+                            กำลังโหลด...
+                        </span>
+                        <small id="currentUserRole"></small>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content">
+                <div class="page-head">
+                    <div>
+                        <div class="eyebrow">Procurement workspace</div>
+                        <h1>รายละเอียดใบขอซื้อ</h1>
+                        <p>ตรวจสอบข้อมูลและรายการสินค้าก่อนพิจารณาอนุมัติ</p>
+                    </div>
+
+                    <a class="btn" href="approvals.html">
+                        ← กลับหน้ารายการ
+                    </a>
+                </div>
+
+                <!-- Requisition information -->
+                <section class="card" style="padding: 24px; margin-bottom: 20px">
+                    <h2>ข้อมูลใบขอซื้อ</h2>
+
+                    <p id="detail-message" role="status" aria-live="polite">
+                        กำลังโหลดข้อมูลใบขอซื้อ...
+                    </p>
+
+                    <div id="requisition-detail" class="detail-summary">
+                        <p>
+                            <strong>เลขที่ใบขอซื้อ:</strong>
+                            <span id="detail-id">-</span>
+                        </p>
+
+                        <p>
+                            <strong>ผู้ขอซื้อ:</strong>
+                            <span id="detail-requester">-</span>
+                        </p>
+
+                        <p>
+                            <strong>แผนก:</strong>
+                            <span id="detail-department">-</span>
+                        </p>
+
+                        <p>
+                            <strong>วันที่ขอซื้อ:</strong>
+                            <span id="detail-date">-</span>
+                        </p>
+
+                        <p>
+                            <strong>วัตถุประสงค์:</strong>
+                            <span id="detail-purpose">-</span>
+                        </p>
+
+                        <p>
+                            <strong>สถานะ:</strong>
+                            <span id="detail-status">-</span>
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Requisition items and VAT -->
+                <section class="card table-card">
+                    <div style="padding: 20px 24px">
+                        <h2>รายการสินค้า</h2>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="detail-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">ลำดับ</th>
+                                    <th scope="col">รายการสินค้า</th>
+                                    <th scope="col" class="number">จำนวน</th>
+                                    <th scope="col" class="number">ราคาต่อหน่วย</th>
+                                    <th scope="col" class="number">รวม</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="detail-items">
+                                <tr>
+                                    <td colspan="5" class="empty-row">
+                                        กำลังโหลดรายการสินค้า...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="total-summary">
+                        <div class="total-box">
+                            <div class="total-row">
+                                <span>ยอดรวมก่อน VAT</span>
+                                <strong id="detail-total">฿0.00</strong>
+                            </div>
+
+                            <div class="total-row">
+                                <span>VAT (7%)</span>
+                                <strong id="detail-vat">฿0.00</strong>
+                            </div>
+
+                            <div class="total-row total-grand">
+                                <span>ยอดรวมสุทธิ</span>
+                                <strong id="detail-grand-total">฿0.00</strong>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Approval form -->
+                <section class="card" style="padding: 24px; margin-top: 20px">
+                    <h2>การพิจารณาอนุมัติ</h2>
+
+                    <p id="approval-message" role="status" aria-live="polite">
+                        กำลังเตรียมข้อมูลการอนุมัติ...
+                    </p>
+
+                    <div class="approval-form">
+                        <div class="approval-field">
+                            <label for="current-approver">
+                                ผู้ดำเนินการอนุมัติ
+                            </label>
+                            <p id="current-approver">
+                                กำลังตรวจสอบผู้ใช้...
+                            </p>
+                        </div>
+
+                        <div class="approval-field">
+                            <label for="approval-comments">
+                                ความคิดเห็น / เหตุผล
+                            </label>
+
+                            <textarea id="approval-comments"
+                                      class="input"
+                                      rows="3"
+                                      maxlength="1000"
+                                      placeholder="กรอกความคิดเห็น หรือเหตุผลกรณีไม่อนุมัติ"></textarea>
+                        </div>
+
+                        <div class="approval-actions">
+                            <button type="button"
+                                    class="btn"
+                                    id="approve-button">
+                                อนุมัติ
+                            </button>
+
+                            <button type="button"
+                                    class="btn"
+                                    id="reject-button">
+                                ไม่อนุมัติ
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+    
+</body>
+</html>

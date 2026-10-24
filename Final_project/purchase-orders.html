@@ -1,0 +1,131 @@
+```html
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>ใบสั่งซื้อ | Procurement System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <a class="brand" href="dashboard.html">
+                <span class="brand-mark">▣</span>
+                <span>Procurement<small>MANAGEMENT SYSTEM</small></span>
+            </a>
+
+            <div class="nav-label">เมนูหลัก</div>
+            <nav class="nav">
+                <a href="dashboard.html"><span class="nav-icon">⌂</span>Dashboard</a>
+                <a href="requisitions.html"><span class="nav-icon">▤</span>ใบขอซื้อ</a>
+                <a href="requisition-create.html"><span class="nav-icon">＋</span>สร้างใบขอซื้อ</a>
+                <a href="approvals.html"><span class="nav-icon">✓</span>อนุมัติใบขอซื้อ</a>
+                <a class="active" href="purchase-orders.html"><span class="nav-icon">▣</span>ใบสั่งซื้อ</a>
+                <a href="goods-receipts.html"><span class="nav-icon">⇩</span>รับสินค้า</a>
+                
+                <a href="profile.html"><span class="nav-icon">⚙</span>โปรไฟล์ / ตั้งค่า</a>
+            </nav>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="crumb">Procurement / <strong>ใบสั่งซื้อ</strong></div>
+                <div class="top-user">
+                    <span class="avatar" id="currentUserAvatar">U</span>
+                    <div class="user-info">
+                        <span class="user-name" id="currentUserName">กำลังโหลด...</span>
+                        <small id="currentUserRole"></small>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content">
+                <div class="page-head">
+                    <div>
+                        <div class="eyebrow">Procurement workspace</div>
+                        <h1>ใบสั่งซื้อ</h1>
+                        <p>ติดตามใบสั่งซื้อและผู้ขาย</p>
+                    </div>
+                    <a class="btn" href="approvals.html">＋ สร้างจากการอนุมัติ</a>
+                </div>
+
+                <section class="card table-card">
+                    <div class="table-tools">
+                        <input id="po-search"
+                               class="search"
+                               type="search"
+                               placeholder="⌕ ค้นหาเลขที่ PO / ใบขอซื้อ / ผู้ขาย / แผนก">
+
+                        <select id="po-status-filter" class="filter">
+                            <option value="">ทุกสถานะ</option>
+                            <option value="Issued">Issued</option>
+                            <option value="Partially Received">รับสินค้าบางส่วน</option>
+                            <option value="Received">รับครบแล้ว</option>
+                            <option value="Cancelled">ยกเลิก</option>
+                        </select>
+
+                        <select id="po-department-filter" class="filter">
+                            <option value="">ทุกแผนก</option>
+                            <option value="EXEC">สำนักกรรมการผู้จัดการ</option>
+                            <option value="FIN">ฝ่ายการเงิน</option>
+                            <option value="ACC">ฝ่ายบัญชี</option>
+                            <option value="PROC">ฝ่ายจัดซื้อ</option>
+                            <option value="HR">ฝ่ายทรัพยากรบุคคล</option>
+                            <option value="IT">ฝ่ายเทคโนโลยีสารสนเทศ</option>
+                            <option value="MKT">ฝ่ายการตลาด</option>
+                            <option value="SALES">ฝ่ายขาย</option>
+                            <option value="CS">ฝ่ายบริการลูกค้า</option>
+                            <option value="LEGAL">ฝ่ายกฎหมาย</option>
+                            <option value="ADMIN">ฝ่ายธุรการ</option>
+                            <option value="WH">ฝ่ายคลังสินค้า</option>
+                            <option value="LOG">ฝ่ายโลจิสติกส์</option>
+                            <option value="PROD">ฝ่ายผลิต</option>
+                            <option value="QA">ฝ่ายประกันคุณภาพ</option>
+                            <option value="RND">ฝ่ายวิจัยและพัฒนา</option>
+                            <option value="ENG">ฝ่ายวิศวกรรม</option>
+                            <option value="FAC">ฝ่ายอาคารสถานที่</option>
+                            <option value="SHE">ฝ่ายความปลอดภัยและสิ่งแวดล้อม</option>
+                            <option value="COM">ฝ่ายสื่อสารองค์กร</option>
+                        </select>
+
+                        <button id="po-reset" class="btn secondary" type="button">
+                            ล้างตัวกรอง
+                        </button>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>เลขที่ PO</th>
+                                    <th>ใบขอซื้อ</th>
+                                    <th>ผู้ขาย</th>
+                                    <th>แผนก</th>
+                                    <th>วันที่สั่งซื้อ</th>
+                                    <th>ยอดรวม</th>
+                                    <th>สถานะ</th>
+                                    <th>รายละเอียด</th>
+                                </tr>
+                            </thead>
+                            <tbody id="po-list">
+                                <tr>
+                                    <td colspan="8">กำลังโหลดข้อมูล...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="table-foot">
+                        <span id="po-count">กำลังโหลดข้อมูล...</span>
+                        <div id="po-pagination" class="pagination"></div>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+```

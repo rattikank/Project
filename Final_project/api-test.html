@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Procurement API Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #f4f7fb;
+            color: #172033;
+            margin: 0;
+            padding: 24px;
+        }
+
+        .wrap {
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 4px;
+        }
+
+        .muted {
+            color: #64748b;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        .margin-top {
+            margin-top: 16px;
+        }
+
+        .flex-1 {
+            flex: 1;
+        }
+
+        /* Layout Components */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #dce4ef;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 3px 14px #13294b0a;
+        }
+
+        /* Form Controls */
+        label {
+            display: block;
+            font-size: 14px;
+            margin: 10px 0 5px;
+        }
+
+        input,
+        select,
+        textarea {
+            box-sizing: border-box;
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font: inherit;
+        }
+
+        button {
+            background: #185abd;
+            color: white;
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-top: 12px;
+            cursor: pointer;
+            font: inherit;
+        }
+
+            button.secondary {
+                background: #475569;
+            }
+
+        /* Data & Tables */
+        pre {
+            white-space: pre-wrap;
+            overflow: auto;
+            background: #0f172a;
+            color: #dbeafe;
+            padding: 14px;
+            border-radius: 10px;
+            min-height: 70px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        td,
+        th {
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 8px;
+        }
+
+        th {
+            background: #f8fafc;
+        }
+
+        .status {
+            font-weight: 600;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="wrap">
+        <h1>Procurement & Purchase Order</h1>
+        <div class="muted">หน้าทดสอบ Backend API เชื่อมต่อ SQL Server</div>
+        <p class="note">
+            ต้องเปิดหน้านี้ผ่าน IIS Express / Visual Studio ที่ URL เดียวกับ Api.ashx ไม่ใช่เปิดไฟล์ด้วย file://
+        </p>
+
+        <!-- ปุ่มควบคุมหลัก -->
+        <div class="row">
+            <button onclick="loadAll()">โหลดข้อมูลใหม่</button>
+            <button class="secondary" onclick="getData('summary')">ทดสอบการเชื่อมต่อ</button>
+        </div>
+
+        <!-- ฟอร์มสร้าง/อนุมัติ และแสดงผล Output -->
+        <div class="grid margin-top">
+            <!-- การ์ด 1: สร้างใบขอซื้อ -->
+            <section class="card">
+                <h2>สร้างใบขอซื้อ</h2>
+
+                <label for="requester">ผู้ขอซื้อ (staff_id)</label>
+                <input id="requester" type="number" value="1">
+
+                <label for="budget">งบประมาณ (budget_id)</label>
+                <input id="budget" type="number" value="1">
+
+                <label for="vendor">ผู้ขายที่ต้องการ (vendor_id, เว้นว่างได้)</label>
+                <input id="vendor" type="number">
+
+                <label for="purpose">วัตถุประสงค์</label>
+                <input id="purpose" value="อุปกรณ์สำนักงาน">
+
+                <label for="item">ชื่อสินค้า</label>
+                <input id="item" value="Keyboard">
+
+                <div class="row">
+                    <div class="flex-1">
+                        <label for="qty">จำนวน</label>
+                        <input id="qty" type="number" value="2" min="1">
+                    </div>
+                    <div class="flex-1">
+                        <label for="price">ราคาต่อหน่วย</label>
+                        <input id="price" type="number" value="450" min="0" step="0.01">
+                    </div>
+                </div>
+
+                <button onclick="createReq()">ส่งใบขอซื้อ</button>
+            </section>
+
+            <!-- การ์ด 2: อนุมัติใบขอซื้อ -->
+            <section class="card">
+                <h2>อนุมัติใบขอซื้อ</h2>
+
+                <label for="approveReq">Requisition ID</label>
+                <input id="approveReq" type="number">
+
+                <label for="approver">ผู้อนุมัติ staff_id</label>
+                <input id="approver" type="number">
+
+                <label for="approveVendor">Vendor ID (จำเป็นเมื่ออนุมัติขั้นสุดท้าย หากใบขอซื้อไม่มี preferred vendor)</label>
+                <input id="approveVendor" type="number">
+
+                <button onclick="approve()">อนุมัติขั้นปัจจุบัน</button>
+                <p class="note">
+                    ระบบมีขั้นอนุมัติ Manager → Procurement → CFO โดยแต่ละครั้งต้องส่ง staff_id ที่มีบทบาทตรงกับขั้นปัจจุบัน
+                </p>
+            </section>
+
+            <!-- การ์ด 3: ผลลัพธ์ API -->
+            <section class="card">
+                <h2>ผลลัพธ์ API</h2>
+                <pre id="output">พร้อมทดสอบ</pre>
+            </section>
+        </div>
+
+        <!-- แสดงตารางข้อมูล -->
+        <div class="grid margin-top">
+            <section class="card">
+                <h2>ใบขอซื้อ</h2>
+                <div id="reqTable" class="muted">กดโหลดข้อมูลใหม่</div>
+            </section>
+
+            <section class="card">
+                <h2>ใบสั่งซื้อ</h2>
+                <div id="poTable" class="muted">กดโหลดข้อมูลใหม่</div>
+            </section>
+
+            <section class="card">
+                <h2>งบประมาณ</h2>
+                <div id="budgetTable" class="muted">กดโหลดข้อมูลใหม่</div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+            /**
+             * ฟังก์ชันเรียก API ไปยัง Api.ashx
+             */
+            async function api(action, method = 'GET', body = null) {
+              const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+              };
+
+              if (body) {
+                options.body = JSON.stringify(body);
+              }
+
+              const response = await fetch('Api.ashx?action=' + encodeURIComponent(action), options);
+              const text = await response.text();
+              let data;
+
+              try {
+                data = JSON.parse(text);
+              } catch {
+                data = { raw: text };
+              }
+
+              if (!response.ok) {
+                throw new Error(data.detail || data.error || ('HTTP ' + response.status));
+              }
+
+              return data;
+            }
+
+            /**
+             * แสดงผล JSON ลงกล่อง Output
+             */
+            function show(data) {
+              document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+            }
+
+            /**
+             * ดึงข้อมูลตาม Endpoint
+             */
+            async function getData(action) {
+              try {
+                show(await api(action));
+              } catch (err) {
+                show({ error: err.message });
+              }
+            }
+
+            /**
+             * สร้าง HTML Table จากข้อมูล Array
+             */
+            function table(rows) {
+              if (!rows || !rows.length) {
+                return '<p class="muted">ไม่มีข้อมูล</p>';
+              }
+
+              const cols = Object.keys(rows[0]).slice(0, 7);
+              const headerHTML = cols.map(c => '<th>' + esc(c) + '</th>').join('');
+
+              const bodyHTML = rows.slice(0, 30).map(r => {
+                const rowCells = cols.map(c => '<td>' + esc(r[c]) + '</td>').join('');
+                return '<tr>' + rowCells + '</tr>';
+              }).join('');
+
+              return `<div style="overflow:auto">
+                <table>
+                  <thead><tr>${headerHTML}</tr></thead>
+                  <tbody>${bodyHTML}</tbody>
+                </table>
+              </div>`;
+            }
+
+            /**
+             * Escapes HTML Characters ป้องกัน XSS
+             */
+            function esc(x) {
+              return String(x == null ? '' : x).replace(/[&<>"']/g, c => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+              }[c]));
+            }
+
+            /**
+             * โหลดข้อมูลทั้งหมดมารวมกันในหน้าเดียว
+             */
+            async function loadAll() {
+              try {
+                const [requisitions, purchaseOrders, budgets] = await Promise.all([
+                  api('requisitions'),
+                  api('purchase-orders'),
+                  api('budgets')
+                ]);
+
+                document.getElementById('reqTable').innerHTML = table(requisitions);
+                document.getElementById('poTable').innerHTML = table(purchaseOrders);
+                document.getElementById('budgetTable').innerHTML = table(budgets);
+
+                show({
+                  message: 'โหลดข้อมูลสำเร็จ',
+                  requisitions: requisitions.length,
+                  purchase_orders: purchaseOrders.length,
+                  budget_rows: budgets.length
+                });
+              } catch (err) {
+                show({ error: err.message });
+              }
+            }
+
+            /**
+             * ยื่นส่งการสร้าง Requisition
+             */
+            async function createReq() {
+              try {
+                const vendorVal = document.getElementById('vendor').value;
+                const body = {
+                  requester_staff_id: +document.getElementById('requester').value,
+                  budget_id: +document.getElementById('budget').value,
+                  preferred_vendor_id: vendorVal ? +vendorVal : null,
+                  purpose: document.getElementById('purpose').value,
+                  items: [
+                    {
+                      item_name: document.getElementById('item').value,
+                      quantity: +document.getElementById('qty').value,
+                      unit_price: +document.getElementById('price').value
+                    }
+                  ]
+                };
+
+                show(await api('create-requisition', 'POST', body));
+                await loadAll();
+              } catch (err) {
+                show({ error: err.message });
+              }
+            }
+
+            /**
+             * ส่งคำขออนุมัติ
+             */
+            async function approve() {
+              try {
+                const vendorVal = document.getElementById('approveVendor').value;
+                const body = {
+                  requisition_id: +document.getElementById('approveReq').value,
+                  approver_staff_id: +document.getElementById('approver').value,
+                  vendor_id: vendorVal ? +vendorVal : null
+                };
+
+                show(await api('approve', 'POST', body));
+                await loadAll();
+              } catch (err) {
+                show({ error: err.message });
+              }
+            }
+
+            // เรียกโหลดข้อมูลเมื่อโหลดหน้าเว็บครั้งแรก
+            loadAll();
+    </script>
+</body>
+</html>

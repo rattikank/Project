@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>เข้าสู่ระบบ | Procurement System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="login-page">
+        <section class="login-visual">
+            <a class="brand" href="index.html">
+                <span class="brand-mark">▣</span>
+                <span>Procurement<small>MANAGEMENT SYSTEM</small></span>
+            </a>
+            <div class="visual-copy">
+                <span class="tag">SMART PROCUREMENT WORKSPACE</span>
+                <h1>จัดซื้ออย่างเป็นระบบ<br>โปร่งใส และตรวจสอบได้</h1>
+                <p>ศูนย์กลางการจัดการใบขอซื้อ การอนุมัติ ใบสั่งซื้อ และงบประมาณในที่เดียว</p>
+                <div class="visual-stats">
+                    <div>
+                        <strong>01</strong>
+                        <span>รวมข้อมูลจัดซื้อ</span>
+                    </div>
+                    <div>
+                        <strong>02</strong>
+                        <span>ติดตามสถานะ</span>
+                    </div>
+                    <div>
+                        <strong>03</strong>
+                        <span>ตรวจสอบงบประมาณ</span>
+                    </div>
+                </div>
+            </div>
+            <div class="visual-foot">
+
+            </div>
+        </section>
+
+        <section class="login-right">
+            <form class="login-form" id="loginForm">
+                <div class="eyebrow">ยินดีต้อนรับกลับ</div>
+                <h2>เข้าสู่ระบบ</h2>
+                <p class="sub">กรอกข้อมูลบัญชีเพื่อเข้าใช้งานระบบจัดซื้อจัดจ้าง</p>
+
+                <div class="field">
+                    <label for="username">ชื่อผู้ใช้งาน (Username)</label>
+                    <input id="username" name="username" type="text" placeholder="กรอกชื่อผู้ใช้งาน" required>
+                </div>
+
+                <div class="field">
+                    <label for="password">รหัสผ่าน (Password)</label>
+                    <input id="password" name="password" type="password" placeholder="กรอกรหัสผ่าน" required>
+                </div>
+
+                <div class="login-row">
+                    <label class="check">
+                        <input type="checkbox"> จดจำฉันไว้
+                    </label>
+                    <a class="forgot" href="#forgot">ลืมรหัสผ่าน?</a>
+                </div>
+
+                <button class="btn full" type="submit">เข้าสู่ระบบ →</button>
+
+                <div class="notice" id="loginNotice" role="alert"></div>
+
+
+                <p class="login-note">
+                    มีปัญหาในการเข้าใช้งาน? ติดต่อผู้ดูแลระบบ<br>
+                    การเข้าถึงข้อมูลขึ้นอยู่กับสิทธิ์ผู้ใช้งาน
+                </p>
+            </form>
+        </section>
+    </main>
+    
+    <script>
+        const loginForm = document.getElementById("loginForm");
+        const loginNotice = document.getElementById("loginNotice");
+        const usernameInput = document.getElementById("username");
+        const passwordInput = document.getElementById("password");
+
+        if (
+                    loginForm &&
+                    loginNotice &&
+                    usernameInput instanceof HTMLInputElement &&
+                    passwordInput instanceof HTMLInputElement
+        ) {
+                    loginForm.addEventListener("submit", async function (event) {
+                        event.preventDefault();
+
+                        const username = usernameInput.value.trim();
+                        const password = passwordInput.value;
+
+                        loginNotice.textContent = "";
+
+                        try {
+                            const response = await fetch("Api.ashx?action=login", {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+                                credentials: "same-origin",
+                                body: JSON.stringify({ username, password })
+                            });
+
+                            const result = await response.json();
+
+                            if (!response.ok || !result.success) {
+                                loginNotice.textContent =
+                                    result.error || "เข้าสู่ระบบไม่สำเร็จ";
+                                return;
+                            }
+
+                            window.location.href = "dashboard.html";
+                        } catch (error) {
+                            loginNotice.textContent =
+                                "ไม่สามารถเชื่อมต่อระบบได้ กรุณาลองใหม่";
+                        }
+                    });
+        }
+    </script>
+    
+</body>
+</html>
