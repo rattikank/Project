@@ -77,19 +77,56 @@
                             </select>
                         </div>
 
+
                         <div class="field">
-                            <label for="budget_id">งบประมาณ / แผนก</label>
-                            <select id="budget_id" required>
+                            <label for="budget_id">งบประมาณ / แผนก (ปี 2027)</label>
+                            <select id="budget_id" required disabled>
                                 <option value="">กำลังโหลดงบประมาณ...</option>
                             </select>
+                            
                         </div>
+
+
 
                         <div class="field">
                             <label for="preferred_vendor_id">ผู้ขายที่ต้องการ (ไม่บังคับ)</label>
                             <select id="preferred_vendor_id">
-                                <option value="">ไม่ระบุผู้ขาย</option>
+                                <option value="">กำลังโหลดข้อมูลผู้ขาย...</option>
                             </select>
                         </div>
+
+
+                        <div id="selected-vendor-details" class="vendor-details" hidden>
+                            <h3>ข้อมูลผู้ขาย</h3>
+
+                            <div class="vendor-details-grid">
+                                <div class="vendor-info-item">
+                                    <small>ชื่อผู้ขาย</small>
+                                    <strong id="selected-vendor-name">-</strong>
+                                </div>
+
+                                <div class="vendor-info-item">
+                                    <small>เลขประจำตัวผู้เสียภาษี</small>
+                                    <strong id="selected-vendor-tax-id">-</strong>
+                                </div>
+
+                                <div class="vendor-info-item">
+                                    <small>เบอร์โทรศัพท์</small>
+                                    <strong id="selected-vendor-phone">-</strong>
+                                </div>
+
+                                <div class="vendor-info-item">
+                                    <small>อีเมล</small>
+                                    <strong id="selected-vendor-email">-</strong>
+                                </div>
+
+                                <div class="vendor-info-item vendor-address">
+                                    <small>ที่อยู่</small>
+                                    <strong id="selected-vendor-address">-</strong>
+                                </div>
+                            </div>
+                        </div>
+
 
                         <div class="field">
                             <label for="purpose">เหตุผล / วัตถุประสงค์</label>

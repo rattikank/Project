@@ -1,4 +1,4 @@
-```html
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -47,7 +47,11 @@
                         <h1>ใบสั่งซื้อ</h1>
                         <p>ติดตามใบสั่งซื้อและผู้ขาย</p>
                     </div>
-                    <a class="btn" href="approvals.html">＋ สร้างจากการอนุมัติ</a>
+                    <a class="btn"
+                       id="po-create-from-approval"
+                       href="approvals.html">
+                        ＋ สร้างจากการอนุมัติ
+                    </a>
                 </div>
 
                 <section class="card table-card">
@@ -105,7 +109,7 @@
                                     <th>วันที่สั่งซื้อ</th>
                                     <th>ยอดรวม</th>
                                     <th>สถานะ</th>
-                                    <th>รายละเอียด</th>
+                                    
                                 </tr>
                             </thead>
                             <tbody id="po-list">
@@ -128,4 +132,3 @@
     <script src="script.js"></script>
 </body>
 </html>
-```

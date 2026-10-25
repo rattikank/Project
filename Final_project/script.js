@@ -2,7 +2,8 @@
 
 // Dashboard Summary Section
 
-async function loadDashboardSummary() {
+
+async function loadDashboardSummary(year) {
     const money = new Intl.NumberFormat('th-TH', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
@@ -10,8 +11,15 @@ async function loadDashboardSummary() {
 
     const number = new Intl.NumberFormat('th-TH');
 
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
+
     try {
-        const response = await fetch('Api.ashx?action=summary');
+        const response = await fetch(
+            `Api.ashx?action=summary&year=${encodeURIComponent(year)}`
+        );
 
         if (!response.ok) {
             throw new Error(`HTTP Error: ${response.status}`);
@@ -24,12 +32,20 @@ async function loadDashboardSummary() {
             throw new Error('ไม่พบข้อมูล Summary');
         }
 
+        const requisitionsCount = Number(data.requisitions_count);
+        const purchaseOrdersCount = Number(data.purchase_orders_count);
+        const pendingCount = Number(data.pending_count);
         const budgetUsed = Number(data.budget_used);
         const budgetTotal = Number(data.budget_total);
 
-        if (!Number.isFinite(budgetUsed) ||
-            !Number.isFinite(budgetTotal)) {
-            throw new Error('ข้อมูล Budget ไม่ถูกต้อง');
+        if (
+            !Number.isFinite(requisitionsCount) ||
+            !Number.isFinite(purchaseOrdersCount) ||
+            !Number.isFinite(pendingCount) ||
+            !Number.isFinite(budgetUsed) ||
+            !Number.isFinite(budgetTotal)
+        ) {
+            throw new Error('ข้อมูล Summary หรือ Budget ไม่ถูกต้อง');
         }
 
         const budgetRemaining = budgetTotal - budgetUsed;
@@ -37,39 +53,34 @@ async function loadDashboardSummary() {
             ? (budgetUsed / budgetTotal) * 100
             : 0;
 
-        document.getElementById('requisitions-count').textContent =
-            number.format(data.requisitions_count);
+        setText('requisitions-count', number.format(requisitionsCount));
+        setText('purchase-orders-count', number.format(purchaseOrdersCount));
+        setText('pending-count', number.format(pendingCount));
 
-        document.getElementById('purchase-orders-count').textContent =
-            number.format(data.purchase_orders_count);
+        setText(
+            'budget-remaining',
+            '฿' + money.format(budgetRemaining)
+        );
 
-        document.getElementById('pending-count').textContent =
-            number.format(data.pending_count);
-
-        document.getElementById('budget-remaining').textContent =
-            '฿' + money.format(budgetRemaining);
-
-        document.getElementById('budget-detail').textContent =
+        setText(
+            'budget-detail',
             `ใช้ไป ฿${money.format(budgetUsed)} จากงบรวม ` +
-            `฿${money.format(budgetTotal)} (${usedPercent.toFixed(2)}%)`;
+            `฿${money.format(budgetTotal)} (${usedPercent.toFixed(2)}%)`
+        );
+
+        console.log(`Dashboard Summary ปี ${year}:`, data);
 
     } catch (error) {
         console.error('Dashboard Summary Error:', error);
 
-        const detail = document.getElementById('budget-detail');
-        if (detail) {
-            detail.textContent = 'ไม่สามารถโหลดข้อมูลงบประมาณได้';
-        }
+        setText('budget-detail', 'ไม่สามารถโหลดข้อมูลงบประมาณได้');
 
         [
             'requisitions-count',
             'purchase-orders-count',
             'pending-count',
             'budget-remaining'
-        ].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = '-';
-        });
+        ].forEach(id => setText(id, '-'));
     }
 }
 
@@ -77,7 +88,7 @@ async function loadDashboardSummary() {
 
 // Monthly Chart Section
 
-async function loadMonthlyChart() {
+async function loadMonthlyChart(year) {
     const chart = document.getElementById('monthly-chart');
 
     if (!chart) {
@@ -88,7 +99,7 @@ async function loadMonthlyChart() {
     try {
         // ใช้รูปแบบ URL เดียวกับ Summary
         const response = await fetch(
-            'Api.ashx?action=monthly-requisitions'
+            `Api.ashx?action=monthly-requisitions&year=${encodeURIComponent(year)}`
         );
 
         const responseText = await response.text();
@@ -109,19 +120,15 @@ async function loadMonthlyChart() {
         }
 
         // สร้างเดือนย้อนหลัง 12 เดือน รวมเดือนที่ไม่มีข้อมูล
-        const now = new Date();
+        const selectedYear = Number(year);
         const months = [];
 
-        for (let i = 11; i >= 0; i--) {
-            const date = new Date(
-                now.getFullYear(),
-                now.getMonth() - i,
-                1
-            );
+        for (let month = 1; month <= 12; month++) {
+            const date = new Date(selectedYear, month - 1, 1);
 
             months.push({
-                year: date.getFullYear(),
-                month: date.getMonth() + 1,
+                year: selectedYear,
+                month: month,
                 label: date.toLocaleDateString('th-TH', {
                     month: 'short'
                 }),
@@ -184,24 +191,65 @@ async function loadMonthlyChart() {
 
 // Initialize Dashboard
 
+// Initialize Dashboard
+
+async function loadDashboardByYear() {
+    const yearSelector = document.getElementById('dashboard-year');
+    if (!yearSelector) return;
+
+    const year = Number(yearSelector.value);
+    if (![2024, 2025, 2026, 2027].includes(year)) {
+        console.error('ปีที่เลือกไม่ถูกต้อง');
+        return;
+    }
+
+    const budgetYearLabel = document.getElementById("budget-year-label");
+    const departmentYearLabel = document.getElementById("department-budget-year-label");
+    if (budgetYearLabel) budgetYearLabel.textContent = String(year);
+    if (departmentYearLabel) departmentYearLabel.textContent = String(year);
+
+    await Promise.all([
+        loadDashboardSummary(year),
+        loadMonthlyChart(year),
+        loadDepartmentBudgets(year)
+    ]);
+
+    const detailModal = document.getElementById("budget-detail-modal");
+    if (detailModal && !detailModal.hidden &&
+        typeof activeBudgetDepartmentId !== "undefined" &&
+        activeBudgetDepartmentId !== null) {
+        const detailYear = document.getElementById("budget-detail-year");
+        if (detailYear) detailYear.value = String(year);
+        await loadDepartmentBudgetDetail(
+            activeBudgetDepartmentId, year, activeBudgetDepartmentName
+        );
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById("monthly-chart")) {
-        loadDashboardSummary();
-        loadMonthlyChart();
+    if (document.getElementById('monthly-chart')) {
+        const yearSelector = document.getElementById('dashboard-year');
+
+        if (yearSelector) {
+            yearSelector.addEventListener('change', loadDashboardByYear);
+        }
+
+        loadDashboardByYear();
         loadPendingRequests();
         loadRecentActivities();
     }
 
     // โหลดเฉพาะเมื่ออยู่หน้าอนุมัติ
-    if (document.getElementById("approval-list")) {
+    if (document.getElementById('approval-list')) {
         loadApprovalList();
     }
+
     const pagination =
-        document.getElementById("approval-pagination");
+        document.getElementById('approval-pagination');
 
     if (pagination) {
-        pagination.addEventListener("click", function (event) {
-            const button = event.target.closest("button[data-page]");
+        pagination.addEventListener('click', function (event) {
+            const button = event.target.closest('button[data-page]');
 
             if (!button || button.disabled) return;
 
@@ -210,9 +258,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const search = document.getElementById("approval-search");
-    const status = document.getElementById("approval-status-filter");
-    const department = document.getElementById("approval-department-filter");
+    const search = document.getElementById('approval-search');
+    const status = document.getElementById('approval-status-filter');
+    const department = document.getElementById('approval-department-filter');
 
     function resetApprovalPage() {
         currentApprovalPage = 1;
@@ -220,18 +268,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (search) {
-        search.addEventListener("input", resetApprovalPage);
+        search.addEventListener('input', resetApprovalPage);
     }
 
     if (status) {
-        status.addEventListener("change", resetApprovalPage);
+        status.addEventListener('change', resetApprovalPage);
     }
 
     if (department) {
-        department.addEventListener("change", resetApprovalPage);
+        department.addEventListener('change', resetApprovalPage);
     }
-
 });
+
+
+
+const search = document.getElementById("approval-search");
+const status = document.getElementById("approval-status-filter");
+const department = document.getElementById("approval-department-filter");
+
+function resetApprovalPage() {
+    currentApprovalPage = 1;
+    renderApprovalList();
+}
+
+if (search) {
+    search.addEventListener("input", resetApprovalPage);
+}
+
+if (status) {
+    status.addEventListener("change", resetApprovalPage);
+}
+
+if (department) {
+    department.addEventListener("change", resetApprovalPage);
+}
+
+
+
 
 
 // loadPendingRequests
@@ -299,6 +372,22 @@ async function loadPendingRequests() {
     }
 }
 
+// รองรับทั้ง ISO date และรูปแบบวันที่ของ .NET เช่น /Date(1790528400000)/
+function formatApiDate(value) {
+    if (!value) return "-";
+
+    const match = String(value).match(/^\/Date\((-?\d+)\)\/$/);
+    const date = match ? new Date(Number(match[1])) : new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "-";
+
+    return date.toLocaleDateString("th-TH", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+    });
+}
+
 //loadRecentActivities
 async function loadRecentActivities() {
     const tbody = document.getElementById('activity-list');
@@ -338,14 +427,7 @@ async function loadRecentActivities() {
             const activity = ` ${prefix}${id.padStart(3, '0')}`;
 
 
-            const rawDate = item.activity_date;
-            const parsedDate = rawDate ? new Date(rawDate) : null;
-
-            const date =
-                parsedDate && !Number.isNaN(parsedDate.getTime())
-                    ? parsedDate.toLocaleDateString('th-TH')
-                    : '-';
-
+            const date = formatApiDate(item.activity_date);
 
             const statusMap = {
                 'Pending Approval': 'รออนุมัติ',
@@ -405,105 +487,6 @@ async function loadRecentActivities() {
 
 
 // Approval Page
-
-async function loadApprovalList() {
-    const tbody = document.getElementById("approval-list");
-
-    // ถ้าไม่ใช่หน้าอนุมัติ ให้หยุดทำงาน
-    if (!tbody) return;
-
-    const countElement = document.getElementById("approval-count");
-
-    try {
-        const response = await fetch(
-            "Api.ashx?action=pending-requests"
-        );
-
-        if (!response.ok) {
-            throw new Error("ไม่สามารถโหลดข้อมูลได้");
-        }
-
-        const result = await response.json();
-
-        // รองรับกรณี API ส่งข้อมูลเป็น Array
-        const items = Array.isArray(result) ? result : [];
-
-        if (items.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="8" style="text-align:center">
-                        ไม่มีรายการใบขอซื้อ
-                    </td>
-                </tr>
-            `;
-
-            if (countElement) {
-                countElement.textContent = "แสดง 0 รายการ";
-            }
-
-            return;
-        }
-
-        tbody.innerHTML = items.map(item => {
-            const id = String(item.requisition_id ?? "");
-            const department = item.department_name ?? "-";
-            const amount = Number(item.total_amount ?? 0);
-            const status = item.status ?? "-";
-
-            return `
-                <tr>
-                    <td>
-                        <span class="id">
-                            REQ-${id.padStart(3, "0")}
-                        </span>
-                    </td>
-                    <td>-</td>
-                    <td>${escapeHtml(department)}</td>
-                    <td>-</td>
-                   <td>
-    <div class="approval-amount">
-        <small>ก่อน VAT: ฿${money(subtotal)}</small>
-        <small>VAT 7%: ฿${money(vat)}</small>
-        <strong>สุทธิ: ฿${money(grandTotal)}</strong>
-    </div>
-</td>
-                    <td>-</td>
-                    <td>
-                        <span class="status pending">
-                            ${escapeHtml(status)}
-                        </span>
-                    </td>
-                    <td>
-                        <a class="table-link"
-                           href="requisition-create.html">
-                            ตรวจสอบ
-                        </a>
-                    </td>
-                </tr>
-            `;
-        }).join("");
-
-        if (countElement) {
-            countElement.textContent =
-                `แสดง ${items.length} รายการ`;
-        }
-
-    } catch (error) {
-        console.error("Approval list error:", error);
-
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" style="text-align:center">
-                    โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบ API
-                </td>
-            </tr>
-        `;
-
-        if (countElement) {
-            countElement.textContent = "โหลดข้อมูลไม่สำเร็จ";
-        }
-    }
-}
 
 // ป้องกันข้อความจากฐานข้อมูลถูกตีความเป็น HTML
 function escapeHtml(value) {
@@ -656,30 +639,21 @@ function renderApprovalList() {
             const vendor =
                 escapeHtml(item.vendor_name ?? "-");
             const status = String(item.status ?? "-");
-            // ยอดก่อน VAT
+            // ใช้ยอดเงินจาก API ก่อน เพื่อให้ตรงกับหน้ารายละเอียด
             const subtotal = Number(item.subtotal_amount ?? item.total_amount ?? 0);
-
-            // VAT 7%
-            const vat = Math.round((subtotal * 0.07 + Number.EPSILON) * 100) / 100;
-
-            // ยอดรวมสุทธิ
-            const grandTotal = subtotal + vat;
+            const calculatedVat = Math.round(
+                (subtotal * 0.07 + Number.EPSILON) * 100
+            ) / 100;
+            const vat = Number(item.vat_amount ?? calculatedVat);
+            const grandTotal = Number(item.total_amount ?? (subtotal + vat));
 
             const money = (value) =>
-                value.toLocaleString("th-TH", {
+                (Number.isFinite(value) ? value : 0).toLocaleString("th-TH", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 });
 
-            const rawDate = item.request_date;
-            const parsedDate = rawDate
-                ? new Date(rawDate)
-                : null;
-
-            const date = parsedDate &&
-                !Number.isNaN(parsedDate.getTime())
-                ? parsedDate.toLocaleDateString("th-TH")
-                : "-";
+            const date = formatApiDate(item.request_date);
 
             let statusClass = "pending";
             let statusLabel = status;
@@ -1106,8 +1080,6 @@ async function initRequisitionPage() {
     // ไม่ทำงานในหน้าอื่น
     if (!tbody) return;
 
-    setupRequisitionDepartmentFilter();
-
     const search = document.getElementById("requisition-search");
     const status = document.getElementById("requisition-status-filter");
     const department =
@@ -1169,8 +1141,20 @@ async function loadPurchaseOrderList() {
 
     try {
         const response = await fetch(
-            "Api.ashx?action=purchase-order-list"
+            "Api.ashx?action=purchase-order-list",
+            {
+                credentials: "same-origin"
+            }
         );
+
+        if (response.status === 401) {
+            window.location.href = "login.html";
+            return;
+        }
+
+        if (response.status === 403) {
+            throw new Error("คุณไม่มีสิทธิ์ดูใบสั่งซื้อรายการนี้");
+        }
 
         if (!response.ok) {
             throw new Error("HTTP " + response.status);
@@ -1273,18 +1257,16 @@ function getPOStatusLabel(status) {
 }
 
 function getPOStatusClass(status) {
-    const normalized = normalizePOStatus(status);
-
     const classes = {
-        pending: "processing",
-        ordered: "approved",
-        partial: "processing",
-        received: "received",
-        cancelled: "rejected",
-        other: "processing"
+        "Issued": "approved",
+        "Partially Received": "processing",
+        "Received": "received",
+        "Cancelled": "rejected",
+        "Pending": "processing",
+        "Other": "processing"
     };
 
-    return classes[normalized];
+    return classes[normalizePOStatus(status)] || "processing";
 }
 
 function formatPOMoney(amount) {
@@ -1393,17 +1375,19 @@ function renderPurchaseOrderList() {
                     <td>${department}</td>
                     <td>${date}</td>
                     <td>${amount}</td>
+
                     <td>
                         <span class="status ${statusClass}">
                             ${statusLabel}
                         </span>
-                    </td>
-                    <td>
                         <a class="table-link"
-                           href="goods-receipts.html?po_id=${poId}">
+                           href="goods-receipts.html?po_id=${poId}"
+                           style="margin-left:8px">
                             ดูรายละเอียด
                         </a>
                     </td>
+                    
+
                 </tr>
             `;
         }).join("");
@@ -1523,7 +1507,7 @@ async function loadGoodsReceiptList() {
     if (!tbody) return;
 
     tbody.innerHTML =
-        '<tr><td colspan="8">กำลังโหลดข้อมูล...</td></tr>';
+        '<tr><td colspan="9">กำลังโหลดข้อมูล...</td></tr>';
 
     try {
         const response = await fetch(
@@ -1550,7 +1534,7 @@ async function loadGoodsReceiptList() {
 
         tbody.innerHTML = `
             <tr>
-                <td colspan="8">โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบ API</td>
+                <td colspan="9">โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบ API</td>
             </tr>
         `;
 
@@ -1650,7 +1634,7 @@ function renderGoodsReceiptList() {
 
     if (pageItems.length === 0) {
         tbody.innerHTML =
-            '<tr><td colspan="8">ไม่พบข้อมูลรับสินค้า</td></tr>';
+            '<tr><td colspan="9">ไม่พบข้อมูลรับสินค้า</td></tr>';
     } else {
         tbody.innerHTML = pageItems.map(item => {
             const status = normalizeGRStatus(item.receipt_status);
@@ -1682,8 +1666,21 @@ function renderGoodsReceiptList() {
                         <a class="table-link"
                            href="goods-receipts.html?po_id=${poId}"
                            style="margin-left:8px">
-                            ดู
+                            
                         </a>
+                    </td>
+                    <td>
+                         ${status === "received"
+                    ? `<span class="status received">รับครบแล้ว</span>`
+                    : `
+                        <button
+                            class="btn"
+                            type="button"
+                            data-receive-po="${escapeHtml(item.po_id)}">
+                            รับสินค้า
+                        </button>
+                    `
+                }
                     </td>
                 </tr>
             `;
@@ -1757,8 +1754,231 @@ function filterGoodsReceiptByPO() {
 }
 
 
+let grSelectedPO = null;
+let grReceivableItems = [];
+
+async function openGoodsReceiptModal(poId) {
+    const modal = document.getElementById("gr-modal");
+    const poLabel = document.getElementById("gr-modal-po");
+    const info = document.getElementById("gr-modal-info");
+    const lineSelect = document.getElementById("gr-line-select");
+    const lineInfo = document.getElementById("gr-line-info");
+    const errorBox = document.getElementById("gr-modal-error");
+    const qtyInput = document.getElementById("gr-receive-qty");
+    const saveButton = document.getElementById("gr-save-btn");
+
+    if (!modal || !lineSelect) {
+        alert("ไม่พบหน้าต่างบันทึกรับสินค้า กรุณาตรวจสอบ HTML");
+        return;
+    }
+
+    grSelectedPO = String(poId);
+    grReceivableItems = [];
+    errorBox.textContent = "";
+    qtyInput.value = "";
+    lineSelect.innerHTML = '<option value="">กำลังโหลด...</option>';
+    lineInfo.textContent = "กำลังโหลดรายการสินค้า...";
+    saveButton.disabled = true;
+    modal.hidden = false;
+
+    try {
+        const response = await fetch(
+            "Api.ashx?action=receivable-po-items",
+            { credentials: "same-origin" }
+        );
+
+        if (!response.ok) {
+            throw new Error("โหลดรายการสินค้าไม่สำเร็จ");
+        }
+
+        const items = await response.json();
+
+        grReceivableItems = items.filter(
+            item => String(item.po_id) === grSelectedPO
+        );
+
+        poLabel.textContent =
+            "PO-" + String(poId).padStart(6, "0");
+
+        if (grReceivableItems.length === 0) {
+            info.textContent = "ไม่พบสินค้าคงเหลือสำหรับรับเข้า";
+            lineSelect.innerHTML =
+                '<option value="">ไม่มีรายการสินค้าคงเหลือ</option>';
+            lineInfo.textContent = "ใบสั่งซื้อนี้รับสินค้าครบแล้ว";
+            return;
+        }
+
+        const first = grReceivableItems[0];
+
+        info.innerHTML = `
+            <div><strong>ผู้ขาย:</strong> ${escapeHtml(first.vendor_name || "-")}</div>
+            <div><strong>แผนก:</strong> ${escapeHtml(first.department || "-")}</div>
+        `;
+
+        lineSelect.innerHTML = `
+            <option value="">เลือกรายการสินค้า</option>
+            ${grReceivableItems.map(item => `
+                <option value="${Number(item.line_no)}">
+                    ${escapeHtml(item.item_name)}
+                    (คงเหลือ ${Number(item.remaining_quantity)})
+                </option>
+            `).join("")}
+        `;
+
+        saveButton.disabled = false;
+        updateGRLineInfo();
+
+    } catch (error) {
+        console.error(error);
+        errorBox.textContent = error.message;
+        lineInfo.textContent = "ไม่สามารถโหลดรายการสินค้าได้";
+    }
+}
+
+function updateGRLineInfo() {
+    const lineSelect = document.getElementById("gr-line-select");
+    const lineInfo = document.getElementById("gr-line-info");
+    const qtyInput = document.getElementById("gr-receive-qty");
+    const qtyHint = document.getElementById("gr-qty-hint");
+    const saveButton = document.getElementById("gr-save-btn");
+
+    const lineNo = Number(lineSelect.value);
+    const item = grReceivableItems.find(
+        row => Number(row.line_no) === lineNo
+    );
+
+    if (!item) {
+        lineInfo.textContent = "กรุณาเลือกรายการสินค้า";
+        qtyInput.value = "";
+        qtyInput.removeAttribute("max");
+        qtyHint.textContent = "";
+        saveButton.disabled = true;
+        return;
+    }
+
+    const ordered = Number(item.ordered_quantity);
+    const received = Number(item.received_quantity);
+    const remaining = Number(item.remaining_quantity);
+
+    lineInfo.innerHTML = `
+        <div><strong>สินค้า:</strong> ${escapeHtml(item.item_name)}</div>
+        <div><strong>จำนวนสั่งซื้อ:</strong> ${ordered}</div>
+        <div><strong>รับแล้ว:</strong> ${received}</div>
+        <div><strong>คงเหลือ:</strong> ${remaining}</div>
+        <div><strong>ราคาต่อหน่วย:</strong> ${formatGRMoney(item.unit_price)}</div>
+    `;
+
+    qtyInput.min = "1";
+    qtyInput.max = String(remaining);
+    qtyInput.step = "1";
+    qtyInput.value = "";
+    qtyHint.textContent = `รับได้ตั้งแต่ 1 ถึง ${remaining} หน่วย`;
+    saveButton.disabled = remaining <= 0;
+}
+
+function closeGoodsReceiptModal() {
+    const modal = document.getElementById("gr-modal");
+    if (modal) modal.hidden = true;
+    grSelectedPO = null;
+    grReceivableItems = [];
+}
+
+function initGoodsReceiptModal() {
+    const modal = document.getElementById("gr-modal");
+    const lineSelect = document.getElementById("gr-line-select");
+    const form = document.getElementById("gr-receive-form");
+
+    if (!modal || modal.dataset.initialized === "true") return;
+    modal.dataset.initialized = "true";
+
+    document.addEventListener("click", event => {
+        const button = event.target.closest("[data-receive-po]");
+        if (button) {
+            openGoodsReceiptModal(button.dataset.receivePo);
+            return;
+        }
+
+        if (event.target.closest("[data-close-modal]")) {
+            closeGoodsReceiptModal();
+        }
+    });
+
+    lineSelect.addEventListener("change", updateGRLineInfo);
+
+    modal.addEventListener("click", event => {
+        if (event.target.classList.contains("gr-modal-backdrop")) {
+            closeGoodsReceiptModal();
+        }
+    });
+
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const errorBox = document.getElementById("gr-modal-error");
+        const saveButton = document.getElementById("gr-save-btn");
+        const qtyInput = document.getElementById("gr-receive-qty");
+
+        const lineNo = Number(lineSelect.value);
+        const quantity = Number(qtyInput.value);
+
+        const item = grReceivableItems.find(
+            row => Number(row.line_no) === lineNo
+        );
+
+        if (!item) {
+            errorBox.textContent = "กรุณาเลือกรายการสินค้า";
+            return;
+        }
+
+        const remaining = Number(item.remaining_quantity);
+
+        if (
+            !Number.isInteger(quantity) ||
+            quantity < 1 ||
+            quantity > remaining
+        ) {
+            errorBox.textContent =
+                `กรุณาระบุจำนวนเต็มตั้งแต่ 1 ถึง ${remaining}`;
+            return;
+        }
+
+        saveButton.disabled = true;
+        errorBox.textContent = "กำลังบันทึก...";
+        const savedPO = grSelectedPO;
+
+        try {
+            await saveGoodsReceipt(
+                Number(grSelectedPO),
+                lineNo,
+                quantity
+            );
+
+            closeGoodsReceiptModal();
+
+            const notice = document.getElementById("gr-notice");
+            if (notice) {
+                notice.textContent =
+                    `บันทึกรับสินค้า PO-${String(grSelectedPO || "").padStart(6, "0")} สำเร็จ`;
+            }
+
+            await loadGoodsReceiptList();
+
+        } catch (error) {
+            console.error(error);
+            errorBox.textContent =
+                error.message || "บันทึกข้อมูลไม่สำเร็จ";
+        } finally {
+            saveButton.disabled = false;
+        }
+    });
+}
+
+
+
 function initGoodsReceiptPage() {
     if (!document.getElementById("gr-list")) return;
+
+    initGoodsReceiptModal();
 
     document.getElementById("gr-search")
         ?.addEventListener("input", () => {
@@ -1807,56 +2027,6 @@ function initGoodsReceiptPage() {
 }
 
 
-// ตรวจสอบผู้ใช้ที่เข้าสู่ระบบ
-async function loadCurrentUser() {
-    const nameElement = document.getElementById("currentUserName");
-    const roleElement = document.getElementById("currentUserRole");
-    const avatarElement = document.getElementById("currentUserAvatar");
-
-    // ทำงานเฉพาะหน้าที่มีส่วนแสดงข้อมูลผู้ใช้
-    if (!nameElement) return;
-
-    try {
-        const response = await fetch("Api.ashx?action=me", {
-            method: "GET",
-            credentials: "same-origin",
-            cache: "no-store"
-        });
-
-        if (response.status === 401) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
-        }
-
-        const result = await response.json();
-
-        if (!result.success || !result.user) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        const name = result.user.name || "ผู้ใช้งาน";
-
-        nameElement.textContent = name;
-
-        if (roleElement) {
-            roleElement.textContent = result.user.staff_role || "";
-        }
-
-        if (avatarElement) {
-            avatarElement.textContent = name.charAt(0).toUpperCase();
-        }
-
-    } catch (error) {
-        console.error("Load current user error:", error);
-        nameElement.textContent = "โหลดข้อมูลไม่สำเร็จ";
-    }
-}
-
 
 
 console.log("script.js loaded");
@@ -1864,6 +2034,10 @@ console.log("script.js loaded");
 document.addEventListener("DOMContentLoaded", function () {
     loadCurrentUser();
     loadProfilePage();
+    initProfileForms();
+
+    initDepartmentBudgetDetail();
+    loadDepartmentBudgets();
 
     // เริ่มทำงานเฉพาะหน้าที่มีตาราง Goods Receipts
     if (document.getElementById("gr-list")) {
@@ -1963,6 +2137,48 @@ function updateCreateReqTotal() {
 }
 
 let currentUser = null;
+let vendorsCache = [];
+
+
+function updateSelectedVendorDetails() {
+    const vendorSelect = document.getElementById("preferred_vendor_id");
+    const details = document.getElementById("selected-vendor-details");
+
+    if (!vendorSelect || !details) return;
+
+    const vendor = vendorsCache.find(
+        item => String(item.vendor_id) === String(vendorSelect.value)
+    );
+
+    if (!vendor) {
+        details.hidden = true;
+        return;
+    }
+
+    const setText = (id, value) => {
+        const element = document.getElementById(id);
+
+        if (!element) return;
+
+        element.textContent =
+            value !== null &&
+                value !== undefined &&
+                String(value).trim() !== ""
+                ? String(value)
+                : "-";
+    };
+
+    setText("selected-vendor-name", vendor.vendor_name);
+    setText("selected-vendor-tax-id", vendor.tax_id);
+    setText("selected-vendor-phone", vendor.phone);
+    setText("selected-vendor-email", vendor.email);
+    setText("selected-vendor-address", vendor.address);
+
+    details.hidden = false;
+}
+
+
+
 async function loadCreateReqOptions() {
     const requesterSelect =
         document.getElementById("requester_staff_id");
@@ -1972,6 +2188,7 @@ async function loadCreateReqOptions() {
         document.getElementById("preferred_vendor_id");
 
     try {
+        // โหลดข้อมูลผู้ใช้ที่เข้าสู่ระบบ
         const meResponse = await fetch(
             "Api.ashx?action=me",
             {
@@ -1981,7 +2198,7 @@ async function loadCreateReqOptions() {
         );
 
         if (meResponse.status === 401) {
-            window.location.replace("login.html");
+            window.location.replace("index.html");
             return;
         }
 
@@ -1992,7 +2209,7 @@ async function loadCreateReqOptions() {
         const meResult = await meResponse.json();
 
         if (!meResult.success || !meResult.user) {
-            window.location.replace("login.html");
+            window.location.replace("index.html");
             return;
         }
 
@@ -2007,57 +2224,69 @@ async function loadCreateReqOptions() {
         requesterSelect.value = String(user.staff_id);
         requesterSelect.disabled = true;
 
-        // โหลดงบประมาณของแผนกผู้ใช้
+        // โหลดงบประมาณปี 2027 ของแผนกผู้ใช้
+        budgetSelect.disabled = true;
+
         budgetSelect.replaceChildren(
             new Option("กำลังโหลดงบประมาณ...", "")
         );
 
-        if (user.department_id == null) {
+        const budgetResponse = await fetch(
+            "Api.ashx?action=budgets",
+            {
+                credentials: "same-origin",
+                cache: "no-store"
+            }
+        );
+
+        if (!budgetResponse.ok) {
+            throw new Error("โหลดงบประมาณไม่สำเร็จ");
+        }
+
+        const budgets = await budgetResponse.json();
+
+        if (!Array.isArray(budgets)) {
+            throw new Error("รูปแบบข้อมูลงบประมาณไม่ถูกต้อง");
+        }
+
+        budgetSelect.replaceChildren(
+            new Option("เลือกงบประมาณ", "")
+        );
+
+        // API ต้องกรองตามแผนกผู้ใช้และปี 2027 อยู่แล้ว
+        // ฝั่งหน้าเว็บตรวจสอบปีซ้ำอีกครั้ง
+        budgets.forEach(item => {
+            if (
+                item.budget_id == null ||
+                Number(item.fiscal_year) !== 2027
+            ) {
+                return;
+            }
+
+            const remaining =
+                Number(item.remaining_amount) || 0;
+
+            budgetSelect.add(
+                new Option(
+                    `${item.department_name || "ไม่ระบุแผนก"} — ปีงบประมาณ ${item.fiscal_year} (คงเหลือ ${remaining.toLocaleString("th-TH", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    })
+                    } บาท)`,
+                    String(item.budget_id)
+                )
+            );
+        });
+
+        if (budgetSelect.options.length === 1) {
             budgetSelect.replaceChildren(
-                new Option("ไม่พบแผนกของผู้ใช้", "")
+                new Option(
+                    "ไม่พบงบประมาณปี 2027 ของแผนกนี้",
+                    ""
+                )
             );
         } else {
-            const budgetResponse = await fetch(
-                `Api.ashx?action=budgets&department_id=${encodeURIComponent(user.department_id)
-                }`,
-                {
-                    credentials: "same-origin",
-                    cache: "no-store"
-                }
-            );
-
-            if (!budgetResponse.ok) {
-                throw new Error("โหลดงบประมาณไม่สำเร็จ");
-            }
-
-            const budgets = await budgetResponse.json();
-
-            budgetSelect.replaceChildren(
-                new Option("เลือกงบประมาณ", "")
-            );
-
-            budgets.forEach(item => {
-                if (item.budget_id == null) return;
-
-                const year = item.fiscal_year != null
-                    ? `ปีงบประมาณ ${item.fiscal_year}`
-                    : "ไม่ระบุปี";
-
-                budgetSelect.add(
-                    new Option(
-                        `${year} (คงเหลือ ${Number(
-                            item.remaining_amount || 0
-                        ).toLocaleString("th-TH")} บาท)`,
-                        String(item.budget_id)
-                    )
-                );
-            });
-
-            if (budgetSelect.options.length === 1) {
-                budgetSelect.replaceChildren(
-                    new Option("ไม่พบงบประมาณของแผนกนี้", "")
-                );
-            }
+            budgetSelect.disabled = false;
         }
 
         // โหลดผู้ขาย
@@ -2075,21 +2304,49 @@ async function loadCreateReqOptions() {
 
         const vendors = await vendorResponse.json();
 
+        if (!Array.isArray(vendors)) {
+            throw new Error("รูปแบบข้อมูลผู้ขายไม่ถูกต้อง");
+        }
+
+        // เก็บเฉพาะผู้ขายที่มีสถานะ Active
+        vendorsCache = vendors.filter(item =>
+            String(item.status || "").toLowerCase() === "active"
+        );
+
+        // สร้าง Dropdown ผู้ขาย
         vendorSelect.replaceChildren(
             new Option("ไม่ระบุผู้ขาย", "")
         );
 
-        vendors.forEach(item => {
+        vendorsCache.forEach(item => {
+            if (item.vendor_id == null) return;
+
             vendorSelect.add(
                 new Option(
-                    item.vendor_name,
+                    item.vendor_name || "ไม่ระบุชื่อผู้ขาย",
                     String(item.vendor_id)
                 )
             );
         });
 
+        // ป้องกัน Event Listener ซ้ำ
+        vendorSelect.removeEventListener(
+            "change",
+            updateSelectedVendorDetails
+        );
+
+        vendorSelect.addEventListener(
+            "change",
+            updateSelectedVendorDetails
+        );
+
+        updateSelectedVendorDetails();
+
     } catch (error) {
-        console.error("Create requisition options error:", error);
+        console.error(
+            "Create requisition options error:",
+            error
+        );
 
         const message =
             document.getElementById("request-message");
@@ -2231,16 +2488,13 @@ function initCreateRequisitionPage() {
         submitButton.textContent = "กำลังบันทึก...";
 
         try {
-            const response = await fetch(
-                "Api.ashx?action=create-requisition",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json; charset=utf-8"
-                    },
-                    body: JSON.stringify(payload)
-                }
-            );
+            const response = await fetch("Api.ashx?action=create-requisition", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
 
             const result = await response.json();
 
@@ -2250,12 +2504,23 @@ function initCreateRequisitionPage() {
                 );
             }
 
-            message.textContent =
-                `บันทึกสำเร็จ เลขที่ใบขอซื้อ REQ-${result.requisition_id}`;
 
-            form.reset();
-            container.replaceChildren();
-            createReqAddItem();
+            if (
+                result.requisition_id === undefined ||
+                result.requisition_id === null ||
+                String(result.requisition_id).trim() === ""
+            ) {
+                throw new Error(
+                    "บันทึกข้อมูลแล้ว แต่ API ไม่ได้ส่งเลขที่ใบขอซื้อกลับมา"
+                );
+            }
+
+            message.textContent =
+                `บันทึกสำเร็จ เลขที่ใบขอซื้อ REQ - ${result.requisition_id}`;
+
+            // เปิดหน้ารายละเอียดของใบขอซื้อที่เพิ่งบันทึก
+            window.location.href =
+                `approval-detail.html?id=${encodeURIComponent(result.requisition_id)}`;
 
         } catch (error) {
             console.error("Create requisition error:", error);
@@ -2286,14 +2551,19 @@ async function loadApprovalDetail() {
     const message = document.getElementById("detail-message");
     const itemsBody = document.getElementById("detail-items");
 
+    if (!message || !itemsBody) return;
+
     if (!id || !/^\d+$/.test(id) || Number(id) <= 0) {
-        message.textContent = "ไม่พบเลขที่ใบขอซื้อ กรุณากลับไปเลือกจากรายการ";
+        message.textContent =
+            "ไม่พบเลขที่ใบขอซื้อ กรุณากลับไปเลือกจากรายการ";
+
         itemsBody.innerHTML = `
-    <tr>
-    <td colspan="5" style="text-align:center">
-        ไม่พบข้อมูล
-    </td>
-            </tr >`;
+            <tr>
+                <td colspan="5" style="text-align:center">
+                    ไม่พบข้อมูล
+                </td>
+            </tr>`;
+
         return;
     }
 
@@ -2309,9 +2579,25 @@ async function loadApprovalDetail() {
         }
 
         const req = data.requisition;
-        console.log("Requisition detail:", req);
+
+        // แสดงชื่อผู้ขายจากข้อมูลที่ API ส่งมา
+        if (req && req.vendor_name) {
+            renderDetailVendor({
+                vendor_name: req.vendor_name
+            });
+
+            // ค้นหารายละเอียด Vendor เพิ่มเติมจากชื่อบริษัท
+            await loadDetailVendor(
+                req.preferred_vendor_id,
+                req.vendor_name
+            );
+        } else {
+            renderDetailVendor(null);
+        }
 
         renderApprovalDetailTotals(req);
+
+
 
 
 
@@ -2354,7 +2640,7 @@ async function loadApprovalDetail() {
     `).join("");
         }
 
-        
+
 
         // ประวัติการอนุมัติ
         const approvalMessage = document.getElementById("approval-message");
@@ -2488,6 +2774,7 @@ if (document.getElementById("requisition-detail")) {
 
 async function loadApproverOptions() {
     const currentApprover = document.getElementById("current-approver");
+    const select = currentApprover;
     const approveButton = document.getElementById("approve-button");
     const rejectButton = document.getElementById("reject-button");
     const message = document.getElementById("approval-message");
@@ -2589,6 +2876,8 @@ async function submitApprovalDecision(decision) {
     message.textContent = "กำลังบันทึกผลการพิจารณา...";
     message.className = "";
 
+    let decisionSaved = false;
+
     try {
         const response = await fetch("Api.ashx?action=approve", {
             method: "POST",
@@ -2626,6 +2915,7 @@ async function submitApprovalDecision(decision) {
         }
 
         message.className = "success";
+        decisionSaved = true;
 
         await loadApprovalDetail();
 
@@ -2634,8 +2924,9 @@ async function submitApprovalDecision(decision) {
             error.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล";
         message.className = "error";
     } finally {
-        approveButton.disabled = false;
-        rejectButton.disabled = false;
+        // บันทึกสำเร็จแล้วให้ปิดปุ่มไว้ ป้องกันการส่งซ้ำจากหน้าเดิม
+        approveButton.disabled = decisionSaved;
+        rejectButton.disabled = decisionSaved;
     }
 }
 
@@ -2662,115 +2953,7 @@ if (document.getElementById("approval-message")) {
     setupApprovalButtons();
 }
 
-// loadCurrentUser
-async function loadCurrentUser() {
-    const nameElement = document.getElementById("currentUserName");
-    const roleElement = document.getElementById("currentUserRole");
-    const avatarElement = document.getElementById("currentUserAvatar");
-
-    try {
-        const response = await fetch("Api.ashx?action=me", {
-            method: "GET",
-            credentials: "same-origin",
-            cache: "no-store"
-        });
-
-        if (response.status === 401) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
-        }
-
-        const result = await response.json();
-
-        if (!result.success || !result.user) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        const name = result.user.name || "ผู้ใช้งาน";
-
-        if (nameElement) {
-            nameElement.textContent = name;
-        }
-
-        if (roleElement) {
-            roleElement.textContent = result.user.staff_role || "";
-        }
-
-        if (avatarElement) {
-            avatarElement.textContent = name.charAt(0).toUpperCase();
-        }
-
-    } catch (error) {
-        console.error("Load current user error:", error);
-
-        if (nameElement) {
-            nameElement.textContent = "โหลดข้อมูลไม่สำเร็จ";
-        }
-    }
-}
-
-document.addEventListener("DOMContentLoaded", loadCurrentUser);
-
-
-
-async function loadProfilePage() {
-    if (!document.getElementById("profileName")) return;
-
-    try {
-        const response = await fetch("Api.ashx?action=me", {
-            method: "GET",
-            credentials: "same-origin",
-            cache: "no-store"
-        });
-
-        if (response.status === 401) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
-        }
-
-        const result = await response.json();
-
-        if (!result.success || !result.user) {
-            window.location.replace("login.html");
-            return;
-        }
-
-        const user = result.user;
-        const name = user.name || "ผู้ใช้งาน";
-        const role = user.staff_role || "";
-
-        const setText = (id, value) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = value;
-        };
-
-        setText("currentUserName", name);
-        setText("currentUserRole", role);
-        setText("profileName", name);
-        setText("profileRole", role);
-        setText("currentUserAvatar", name.charAt(0).toUpperCase());
-        setText("profileAvatar", name.charAt(0).toUpperCase());
-
-    } catch (error) {
-        console.error("Load profile error:", error);
-        setTextIfExists("profileName", "โหลดข้อมูลไม่สำเร็จ");
-    }
-}
-
-function setTextIfExists(id, value) {
-    const element = document.getElementById(id);
-    if (element) element.textContent = value;
-}
-
+// Current user and profile
 async function fetchCurrentUser() {
     const response = await fetch("Api.ashx?action=me", {
         method: "GET",
@@ -2779,29 +2962,23 @@ async function fetchCurrentUser() {
     });
 
     if (response.status === 401) {
-        window.location.replace("login.html");
+        window.location.replace("index.html");
         return null;
     }
 
-    if (!response.ok) {
-        throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
-    }
+    if (!response.ok) throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
 
     const result = await response.json();
-
     if (!result.success || !result.user) {
-        window.location.replace("login.html");
+        window.location.replace("index.html");
         return null;
     }
-
     return result.user;
 }
 
 function setTextIfExists(id, value) {
     const element = document.getElementById(id);
-    if (element) {
-        element.textContent = value ?? "";
-    }
+    if (element) element.textContent = value ?? "";
 }
 
 function displayCurrentUser(user) {
@@ -2812,12 +2989,17 @@ function displayCurrentUser(user) {
     setTextIfExists("currentUserName", name);
     setTextIfExists("currentUserRole", role);
     setTextIfExists("currentUserAvatar", initial);
+    setTextIfExists("profileName", name);
+    setTextIfExists("profileFullName", name);
+    setTextIfExists("profileRole", role);
+    setTextIfExists("profileAvatar", initial);
+    setValueIfExists("profileUsername", user.username);
+    setValueIfExists("profileEmail", user.email);
+    setValueIfExists("profileDepartment", user.department_name ?? user.department);
 }
 
 async function loadCurrentUser() {
-    // หน้า Profile จะโหลดข้อมูลผ่าน loadProfilePage()
-    if (document.getElementById("profileName")) return;
-
+    if (!document.getElementById("currentUserName")) return;
     try {
         const user = await fetchCurrentUser();
         if (user) displayCurrentUser(user);
@@ -2829,106 +3011,124 @@ async function loadCurrentUser() {
 
 async function loadProfilePage() {
     if (!document.getElementById("profileName")) return;
-
     try {
         const user = await fetchCurrentUser();
-        if (!user) return;
-
-        displayCurrentUser(user);
-
-        const name = user.name || "ผู้ใช้งาน";
-        const initial = name.charAt(0).toUpperCase();
-
-        setTextIfExists("profileName", name);
-        setTextIfExists("profileRole", user.staff_role || "");
-        setTextIfExists("profileAvatar", initial);
-
-        // เติมข้อมูลเมื่อ API ส่งฟิลด์เหล่านี้กลับมา
-        setTextIfExists("profileUsername", user.username || "");
-        setTextIfExists("profileEmail", user.email || "");
-        setTextIfExists("profileDepartment", user.department_name || "");
-
+        if (user) displayCurrentUser(user);
     } catch (error) {
         console.error("Load profile error:", error);
         setTextIfExists("profileName", "โหลดข้อมูลไม่สำเร็จ");
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-    loadCurrentUser();
-    loadProfilePage();
-});
 
-async function fetchCurrentUser() {
-    const response = await fetch("Api.ashx?action=me", {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
-    });
-
-    if (response.status === 401) {
-        window.location.replace("login.html");
-        return null;
-    }
-
-    if (!response.ok) {
-        throw new Error("โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
-    }
-
-    const result = await response.json();
-
-    if (!result.success || !result.user) {
-        window.location.replace("login.html");
-        return null;
-    }
-
-    return result.user;
-}
-
-function setTextIfExists(id, value) {
+function showProfileNotice(id, message, type) {
     const element = document.getElementById(id);
-    if (element) element.textContent = value ?? "";
+    if (!element) return;
+    element.textContent = message;
+    element.className = type || "";
 }
 
-function displayCurrentUser(user) {
-    const name = user.name || "ผู้ใช้งาน";
-    const initial = name.charAt(0).toUpperCase();
+async function submitProfileForm(event) {
+    event.preventDefault();
+    const button = document.getElementById("saveProfileButton");
+    const fullName = (document.getElementById("profileFullName")?.value || "").trim();
+    const email = (document.getElementById("profileEmail")?.value || "").trim();
 
-    setTextIfExists("currentUserName", name);
-    setTextIfExists("currentUserRole", user.staff_role || "");
-    setTextIfExists("currentUserAvatar", initial);
+    if (!fullName) {
+        showProfileNotice("profileNotice", "กรุณากรอกชื่อ-นามสกุล", "error");
+        return;
+    }
+    if (email.length > 50) {
+        showProfileNotice("profileNotice", "อีเมลต้องมีความยาวไม่เกิน 50 ตัวอักษร", "error");
+        return;
+    }
 
-    setTextIfExists("profileName", name);
-    setTextIfExists("profileRole", user.staff_role || "");
-    setTextIfExists("profileAvatar", initial);
-}
-
-
-async function loadProfilePage() {
-    if (!document.getElementById("profileName")) return;
+    if (button) button.disabled = true;
+    showProfileNotice("profileNotice", "กำลังบันทึกข้อมูล...", "muted");
 
     try {
+        const response = await fetch("Api.ashx?action=update-profile", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({ full_name: fullName, email: email })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || "ไม่สามารถบันทึกข้อมูลได้");
+        }
+
         const user = await fetchCurrentUser();
-        if (!user) return;
-
-        const name = user.name || "ผู้ใช้งาน";
-        const initial = name.charAt(0).toUpperCase();
-
-        setValueIfExists("currentUserName", name);
-        setValueIfExists("currentUserRole", user.staff_role);
-        setValueIfExists("currentUserAvatar", initial);
-
-        setValueIfExists("profileName", name);
-        setValueIfExists("profileFullName", name);
-        setValueIfExists("profileRole", user.staff_role);
-        setValueIfExists("profileAvatar", initial);
-        setValueIfExists("profileUsername", user.username);
-        setValueIfExists("profileEmail", user.email);
-        setValueIfExists("profileDepartment", user.department);
-
+        if (user) displayCurrentUser(user);
+        showProfileNotice("profileNotice", result.message || "บันทึกข้อมูลสำเร็จ", "success");
     } catch (error) {
-        console.error("Load profile error:", error);
-        setValueIfExists("profileName", "โหลดข้อมูลไม่สำเร็จ");
+        console.error("Update profile error:", error);
+        showProfileNotice("profileNotice", error.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล", "error");
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function submitPasswordForm(event) {
+    event.preventDefault();
+    const button = document.getElementById("changePasswordButton");
+    const currentPassword = document.getElementById("currentPassword")?.value || "";
+    const newPassword = document.getElementById("newPassword")?.value || "";
+    const confirmPassword = document.getElementById("confirmPassword")?.value || "";
+
+    if (newPassword.length < 8) {
+        showProfileNotice("passwordNotice", "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร", "error");
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        showProfileNotice("passwordNotice", "รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน", "error");
+        return;
+    }
+    if (currentPassword === newPassword) {
+        showProfileNotice("passwordNotice", "รหัสผ่านใหม่ต้องแตกต่างจากรหัสผ่านปัจจุบัน", "error");
+        return;
+    }
+
+    if (button) button.disabled = true;
+    showProfileNotice("passwordNotice", "กำลังเปลี่ยนรหัสผ่าน...", "muted");
+
+    try {
+        const response = await fetch("Api.ashx?action=change-password", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword,
+                confirm_password: confirmPassword
+            })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || "ไม่สามารถเปลี่ยนรหัสผ่านได้");
+        }
+
+        showProfileNotice("passwordNotice", result.message || "เปลี่ยนรหัสผ่านสำเร็จ", "success");
+        document.getElementById("passwordForm")?.reset();
+    } catch (error) {
+        console.error("Change password error:", error);
+        showProfileNotice("passwordNotice", error.message || "เกิดข้อผิดพลาดในการเปลี่ยนรหัสผ่าน", "error");
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+function initProfileForms() {
+    const profileForm = document.getElementById("profileForm");
+    const passwordForm = document.getElementById("passwordForm");
+
+    if (profileForm && !profileForm.dataset.bound) {
+        profileForm.dataset.bound = "true";
+        profileForm.addEventListener("submit", submitProfileForm);
+    }
+    if (passwordForm && !passwordForm.dataset.bound) {
+        passwordForm.dataset.bound = "true";
+        passwordForm.addEventListener("submit", submitPasswordForm);
     }
 }
 
@@ -2936,7 +3136,6 @@ document.addEventListener("DOMContentLoaded", () => {
     loadCurrentUser();
     loadProfilePage();
 });
-
 
 function setValueIfExists(id, value) {
     const element = document.getElementById(id);
@@ -2953,6 +3152,359 @@ function setValueIfExists(id, value) {
     } else {
         element.textContent = safeValue;
     }
+}
+
+
+
+function renderDetailVendor(vendor) {
+    const details = document.getElementById("detail-vendor-details");
+    const empty = document.getElementById("detail-vendor-empty");
+
+    if (!details || !empty) return;
+
+    const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (!element) return;
+
+        element.textContent =
+            value !== null &&
+                value !== undefined &&
+                String(value).trim() !== ""
+                ? String(value)
+                : "-";
+    };
+
+    if (!vendor) {
+        details.hidden = true;
+        empty.hidden = false;
+        return;
+    }
+
+    setText("detail-vendor-name", vendor.vendor_name);
+    setText("detail-vendor-tax-id", vendor.tax_id);
+    setText("detail-vendor-phone", vendor.phone);
+    setText("detail-vendor-email", vendor.email);
+    setText("detail-vendor-address", vendor.address);
+
+    empty.hidden = true;
+    details.hidden = false;
+}
+
+
+
+
+async function loadDetailVendor(preferredVendorId, vendorName) {
+    try {
+        const response = await fetch(
+            "Api.ashx?action=vendors",
+            {
+                credentials: "same-origin",
+                cache: "no-store"
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("โหลดข้อมูลผู้ขายไม่สำเร็จ");
+        }
+
+        const vendors = await response.json();
+        console.log("Vendors API:", vendors);
+
+        if (!Array.isArray(vendors)) {
+            throw new Error("รูปแบบข้อมูลผู้ขายไม่ถูกต้อง");
+        }
+
+        const vendor = vendors.find(item =>
+            preferredVendorId != null &&
+            String(item.vendor_id) === String(preferredVendorId)
+        ) || vendors.find(item =>
+            vendorName &&
+            String(item.vendor_name).trim() === String(vendorName).trim()
+        );
+
+        renderDetailVendor(vendor || null);
+
+    } catch (error) {
+        console.error("Load detail vendor error:", error);
+        renderDetailVendor(null);
+    }
+}
+
+async function saveGoodsReceipt(poId, lineNo, receivedQuantity) {
+    const response = await fetch(
+        "Api.ashx?action=save-goods-receipt",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+                po_id: Number(poId),
+                line_no: Number(lineNo),
+                received_quantity: Number(receivedQuantity)
+            })
+        }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+        throw new Error(result.error || "บันทึกการรับสินค้าไม่สำเร็จ");
+    }
+
+    return result;
+}
+
+
+let departmentBudgetRequestVersion = 0;
+
+async function loadDepartmentBudgets(year) {
+    const container = document.getElementById("department-budget-list");
+    if (!container) return;
+
+    const selectedYear = Number(
+        year ?? document.getElementById("dashboard-year")?.value ?? 2027
+    );
+    const requestVersion = ++departmentBudgetRequestVersion;
+    container.innerHTML = "<p>กำลังโหลดข้อมูลงบประมาณ...</p>";
+
+    try {
+        const response = await fetch(
+            `Api.ashx?action=department-budget-list&year=${encodeURIComponent(selectedYear)}`,
+            { credentials: "same-origin", cache: "no-store" }
+        );
+
+        const budgets = await response.json();
+        if (!response.ok) {
+            throw new Error(budgets.error || "โหลดงบประมาณไม่สำเร็จ");
+        }
+        if (requestVersion !== departmentBudgetRequestVersion) return;
+
+        // ป้องกันข้อมูลปีอื่นจาก API/response เก่าถูกนำมาแสดง
+        const matchingBudgets = Array.isArray(budgets)
+            ? budgets.filter(b => Number(b.fiscal_year) === selectedYear)
+            : [];
+
+        if (matchingBudgets.length === 0) {
+            container.textContent = `ไม่พบข้อมูลงบประมาณปี ${selectedYear}`;
+            return;
+        }
+
+        container.innerHTML = matchingBudgets.map(b => {
+            const amount = Number(b.budget_amount) || 0;
+            const used = Number(b.used_amount) || 0;
+            const remaining = amount - used;
+            const percent = amount > 0 ? Math.max(0, used / amount * 100) : 0;
+
+            return `
+                <button type="button"
+                    class="department-budget-card"
+                    data-budget-department="${Number(b.department_id)}"
+                    data-budget-year="${selectedYear}"
+                    data-budget-name="${escapeHtml(b.department_name || "")}"
+                    data-budget-amount="${amount}"
+                    data-budget-used="${used}"
+                    data-budget-remaining="${remaining}"
+                    data-budget-percent="${percent}">
+                    <strong>${escapeHtml(b.department_name)}</strong>
+                    <div class="muted">ปีงบประมาณ ${selectedYear}</div>
+                    <div class="budget-remaining">${remaining.toLocaleString("th-TH")} บาท</div>
+                    <div class="muted">งบประมาณคงเหลือ</div>
+                    <div class="budget-progress">
+                        <div class="budget-progress-bar" style="width:${Math.max(0, Math.min(100, percent))}%"></div>
+                    </div>
+                    <div class="budget-meta">
+                        <span>ใช้ไป ${used.toLocaleString("th-TH")} บาท</span>
+                        <span>${percent.toFixed(1)}%</span>
+                    </div>
+                    <div class="budget-meta">
+                        <span>งบทั้งหมด</span>
+                        <span>${amount.toLocaleString("th-TH")} บาท</span>
+                    </div>
+                </button>
+            `;
+        }).join("");
+    } catch (error) {
+        if (requestVersion !== departmentBudgetRequestVersion) return;
+        console.error("Department budget error:", error);
+        container.textContent = "โหลดข้อมูลงบประมาณไม่สำเร็จ";
+    }
+}
+
+let activeBudgetDepartmentId = null;
+let activeBudgetDepartmentName = "";
+let activeBudgetRequestVersion = 0;
+
+async function loadDepartmentBudgetDetail(departmentId, fiscalYear, departmentName = "") {
+    const modal = document.getElementById("budget-detail-modal");
+    const title = document.getElementById("budget-detail-title");
+    const department = document.getElementById("budget-detail-department");
+    const summary = document.getElementById("budget-detail-summary");
+    const tbody = document.getElementById("budget-detail-list");
+    const yearSelector = document.getElementById("budget-detail-year");
+    if (!modal || !title || !department || !summary || !tbody) return;
+
+    // บังคับขนาดเฉพาะ Modal รายละเอียดงบประมาณ เพื่อไม่ให้ CSS เดิม
+    // ที่กำหนด max-width: 560px ทำให้กรอบแคบเกินไป
+    const modalPanel = modal.querySelector(".gr-modal-panel");
+    if (modalPanel) {
+        modalPanel.style.setProperty("width", "min(1100px, calc(100vw - 32px))");
+        modalPanel.style.setProperty("max-width", "1100px");
+        modalPanel.style.setProperty("max-height", "calc(100vh - 32px)");
+        modalPanel.style.setProperty("box-sizing", "border-box");
+        modalPanel.style.setProperty("overflow-x", "auto");
+        modalPanel.style.setProperty("overflow-y", "auto");
+    }
+
+    // ตารางนี้ต้องมี 5 คอลัมน์: วันที่, เลขที่เอกสาร, รายการ, ยอดเงิน, สถานะ
+    const detailTable = modal.querySelector(".table-wrap table");
+    if (detailTable) {
+        detailTable.style.setProperty("width", "100%");
+        detailTable.style.setProperty("min-width", "900px");
+        detailTable.style.setProperty("border-collapse", "collapse");
+
+        detailTable.querySelectorAll("thead th, tbody td").forEach(cell => {
+            cell.style.setProperty("display", "table-cell", "important");
+            cell.style.setProperty("white-space", "normal");
+            cell.style.setProperty("overflow-wrap", "anywhere");
+            cell.style.setProperty("vertical-align", "top");
+            cell.style.setProperty("padding", "12px 14px");
+        });
+    }
+
+    const selectedYear = Number(fiscalYear);
+    const requestVersion = ++activeBudgetRequestVersion;
+    if (yearSelector) yearSelector.value = String(selectedYear);
+
+    title.textContent = departmentName || "รายละเอียดการใช้จ่าย";
+    department.textContent = `ปีงบประมาณ ${selectedYear}`;
+    summary.textContent = "กำลังโหลดสรุปงบประมาณ...";
+    tbody.innerHTML = '<tr><td colspan="5">กำลังโหลดข้อมูล...</td></tr>';
+    modal.hidden = false;
+
+    try {
+        const params = new URLSearchParams({
+            action: "department-budget-list",
+            year: String(selectedYear)
+        });
+        const budgetResponse = await fetch(`Api.ashx?${params.toString()}`, {
+            credentials: "same-origin",
+            cache: "no-store"
+        });
+        const budgets = await budgetResponse.json();
+        if (!budgetResponse.ok) throw new Error(budgets.error || "โหลดงบประมาณไม่สำเร็จ");
+        const budget = Array.isArray(budgets) ? budgets.find(item =>
+            Number(item.department_id) === Number(departmentId) &&
+            Number(item.fiscal_year) === selectedYear
+        ) : null;
+
+        if (requestVersion !== activeBudgetRequestVersion) return;
+
+        if (budget) {
+            const amount = Number(budget.budget_amount) || 0;
+            const used = Number(budget.used_amount) || 0;
+            const remaining = amount - used;
+            const percent = amount > 0 ? used / amount * 100 : 0;
+            const money = value => (Number(value) || 0).toLocaleString("th-TH", {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+            summary.textContent =
+                `งบรวม ${money(amount)} บาท · ใช้ไป ${money(used)} บาท · ` +
+                `คงเหลือ ${money(remaining)} บาท · ใช้งบ ${percent.toFixed(2)}%`;
+        } else {
+            summary.textContent = `ไม่พบข้อมูลงบประมาณของแผนกนี้ในปี ${selectedYear}`;
+        }
+
+        const detailParams = new URLSearchParams({
+            action: "department-budget-detail",
+            department_id: String(departmentId),
+            fiscal_year: String(selectedYear)
+        });
+        const response = await fetch(`Api.ashx?${detailParams.toString()}`, {
+            credentials: "same-origin",
+            cache: "no-store"
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "โหลดรายละเอียดไม่สำเร็จ");
+        if (requestVersion !== activeBudgetRequestVersion) return;
+
+        const matchingRows = Array.isArray(data)
+            ? data.filter(item => Number(item.fiscal_year) === selectedYear &&
+                Number(item.department_id) === Number(departmentId))
+            : [];
+
+        if (matchingRows.length === 0) {
+            tbody.innerHTML =
+                `<tr><td colspan="5">ไม่พบรายการใบสั่งซื้อของแผนกนี้ในปี ${selectedYear}</td></tr>`;
+            return;
+        }
+
+        title.textContent = matchingRows[0].department_name || departmentName || "รายละเอียดการใช้จ่าย";
+        department.textContent = `ปีงบประมาณ ${selectedYear}`;
+        const money = value => (Number(value) || 0).toLocaleString("th-TH", {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        }) + " บาท";
+
+        tbody.innerHTML = matchingRows.map(item => `
+            <tr>
+                <td>${escapeHtml(item.document_date || "-")}</td>
+                <td>
+                    ${escapeHtml(item.document_no || "-")}
+                    <div class="muted">${escapeHtml(item.requisition_no || "-")}</div>
+                </td>
+                <td>
+                    ${escapeHtml(item.item_name || "-")}
+                    <div class="muted">
+                        จำนวน ${Number(item.quantity) || 0} × ${money(item.unit_price)}
+                    </div>
+                </td>
+                <td>${money(item.item_amount)}</td>
+                <td>${escapeHtml(item.document_status || "-")}</td>
+            </tr>
+        `).join("");
+    } catch (error) {
+        if (requestVersion !== activeBudgetRequestVersion) return;
+        console.error("Department budget detail error:", error);
+        summary.textContent = "ไม่สามารถโหลดสรุปงบประมาณได้";
+        tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+    }
+}
+
+function initDepartmentBudgetDetail() {
+    const container = document.getElementById("department-budget-list");
+    const modal = document.getElementById("budget-detail-modal");
+    if (!container || !modal || modal.dataset.initialized === "true") return;
+    modal.dataset.initialized = "true";
+
+    container.addEventListener("click", event => {
+        const button = event.target.closest("[data-budget-department]");
+        if (!button) return;
+
+        activeBudgetDepartmentId = Number(button.dataset.budgetDepartment);
+        activeBudgetDepartmentName = button.dataset.budgetName || "";
+        // ใช้ปีปัจจุบันที่เลือกจาก Dashboard ไม่อิงข้อมูลค้างบนการ์ดเก่า
+        const fiscalYear = Number(document.getElementById("dashboard-year")?.value ||
+            button.dataset.budgetYear || 2027);
+        loadDepartmentBudgetDetail(
+            activeBudgetDepartmentId, fiscalYear, activeBudgetDepartmentName
+        );
+    });
+
+    document.getElementById("budget-detail-year")?.addEventListener("change", event => {
+        if (activeBudgetDepartmentId == null) return;
+        loadDepartmentBudgetDetail(
+            activeBudgetDepartmentId,
+            Number(event.target.value),
+            activeBudgetDepartmentName
+        );
+    });
+
+    modal.addEventListener("click", event => {
+        if (event.target.closest("[data-close-budget-modal]")) {
+            modal.hidden = true;
+        }
+    });
 }
 
 // loadCurrentApprover
@@ -2980,7 +3532,7 @@ async function loadCurrentApprover() {
         );
 
         if (response.status === 401) {
-            window.location.replace("login.html");
+            window.location.replace("index.html");
             return;
         }
 
@@ -3010,7 +3562,7 @@ async function loadCurrentApprover() {
     }
 }
 
-loadCurrentApprover();
+document.addEventListener("DOMContentLoaded", loadCurrentApprover);
 
 
 

@@ -47,136 +47,396 @@ public class ProcurementApi : IHttpHandler, System.Web.SessionState.IRequiresSes
             {
                                 
                
-case "requisition-detail":
+                case "requisition-detail":
+                {
+                    int requisitionId;
+
+                    if (!Int32.TryParse(ctx.Request["id"], out requisitionId) ||
+                        requisitionId <= 0)
+                    {
+                        Write(ctx, 400, new { error = "Invalid requisition ID" });
+                        break;
+                    }
+
+                    // ดึงข้อมูลใบขอซื้อ พร้อมคำนวณยอดก่อน VAT, VAT 7% และยอดสุทธิ
+                    DataTable requisition = Query(c, @"
+                        SELECT
+                            r.requisition_id,
+                            'REQ-' + CAST(r.requisition_id AS VARCHAR(20))
+                                AS requisition_no,
+                            r.request_date,
+                            r.status,
+                            r.purpose,
+
+                            LTRIM(RTRIM(
+                                COALESCE(s.first_name, '') + ' ' +
+                                COALESCE(s.last_name, '')
+                            )) AS requester_name,
+
+                            COALESCE(d.department_name, N'-') AS department,
+                            COALESCE(v.vendor_name, N'-') AS vendor_name,
+
+                            CAST(
+                                COALESCE(x.subtotal_amount, 0)
+                                AS DECIMAL(18,2)
+                            ) AS subtotal_amount,
+
+                            CAST(0.07 AS DECIMAL(5,4)) AS vat_rate,
+
+                            CAST(
+                                ROUND(
+                                    COALESCE(x.subtotal_amount, 0) * 0.07,
+                                    2
+                                )
+                                AS DECIMAL(18,2)
+                            ) AS vat_amount,
+
+                            CAST(
+                                COALESCE(x.subtotal_amount, 0)
+                                + ROUND(
+                                    COALESCE(x.subtotal_amount, 0) * 0.07,
+                                    2
+                                )
+                                AS DECIMAL(18,2)
+                            ) AS total_amount
+
+                        FROM dbo.requisitions AS r
+
+                        LEFT JOIN dbo.staff AS s
+                            ON s.staff_id = r.requester_staff_id
+
+                        LEFT JOIN dbo.departments AS d
+                            ON d.department_id = s.department_id
+
+                        LEFT JOIN dbo.vendors AS v
+                            ON v.vendor_id = r.preferred_vendor_id
+
+                        OUTER APPLY (
+                            SELECT SUM(i.line_total) AS subtotal_amount
+                            FROM dbo.requisition_items AS i
+                            WHERE i.requisition_id = r.requisition_id
+                        ) AS x
+
+                        WHERE r.requisition_id = " + requisitionId);
+
+                    if (requisition.Rows.Count == 0)
+                    {
+                        Write(ctx, 404, new { error = "Requisition not found" });
+                        break;
+                    }
+
+                    // รายการสินค้าในใบขอซื้อ
+                    DataTable items = Query(c, @"
+                        SELECT
+                            line_no,
+                            item_name,
+                            quantity,
+                            unit_price,
+                            line_total
+                        FROM dbo.requisition_items
+                        WHERE requisition_id = " + requisitionId + @"
+                        ORDER BY line_no");
+
+                    // ประวัติการอนุมัติ
+                    DataTable approvals = Query(c, @"
+                        SELECT
+                            a.approval_level,
+                            a.approval_status,
+                            a.approved_at,
+                            a.comments,
+
+                            LTRIM(RTRIM(
+                                COALESCE(s.first_name, '') + ' ' +
+                                COALESCE(s.last_name, '')
+                            )) AS approver_name
+
+                        FROM dbo.approvals AS a
+
+                        LEFT JOIN dbo.staff AS s
+                            ON s.staff_id = a.approver_staff_id
+
+                        WHERE a.requisition_id = " + requisitionId + @"
+                        ORDER BY a.approval_level");
+
+                    Write(ctx, 200, new
+                    {
+                        requisition = Rows(requisition)[0],
+                        items = Rows(items),
+                        approvals = Rows(approvals)
+                    });
+
+                    break;
+                }
+
+                
+                
+                
+                
+case "summary":
 {
-    int requisitionId;
-
-    if (!Int32.TryParse(ctx.Request["id"], out requisitionId) ||
-        requisitionId <= 0)
+    if (ctx.Session == null ||
+        ctx.Session["staff_id"] == null ||
+        ctx.Session["staff_role"] == null)
     {
-        Write(ctx, 400, new { error = "Invalid requisition ID" });
+        Write(ctx, 401, new
+        {
+            success = false,
+            error = "กรุณาเข้าสู่ระบบก่อน"
+        });
         break;
     }
 
-    // ดึงข้อมูลใบขอซื้อ พร้อมคำนวณยอดก่อน VAT, VAT 7% และยอดสุทธิ
-    DataTable requisition = Query(c, @"
-        SELECT
-            r.requisition_id,
-            'REQ-' + CAST(r.requisition_id AS VARCHAR(20))
-                AS requisition_no,
-            r.request_date,
-            r.status,
-            r.purpose,
+    int staffId = Convert.ToInt32(ctx.Session["staff_id"]);
+    string role = Convert.ToString(ctx.Session["staff_role"]);
 
-            LTRIM(RTRIM(
-                COALESCE(s.first_name, '') + ' ' +
-                COALESCE(s.last_name, '')
-            )) AS requester_name,
+    int departmentId = ctx.Session["department_id"] == null
+        ? 0
+        : Convert.ToInt32(ctx.Session["department_id"]);
 
-            COALESCE(d.department_name, N'-') AS department,
-            COALESCE(v.vendor_name, N'-') AS vendor_name,
+    bool isExecutive =
+        role == "CEO" || role == "CFO";
 
-            CAST(
-                COALESCE(x.subtotal_amount, 0)
-                AS DECIMAL(18,2)
-            ) AS subtotal_amount,
+    bool isProcurement =
+        role == "Procurement";
 
-            CAST(0.07 AS DECIMAL(5,4)) AS vat_rate,
+    bool isManager =
+        role == "Manager";
 
-            CAST(
-                ROUND(
-                    COALESCE(x.subtotal_amount, 0) * 0.07,
-                    2
-                )
-                AS DECIMAL(18,2)
-            ) AS vat_amount,
+    bool isStaff =
+        role == "Staff";
 
-            CAST(
-                COALESCE(x.subtotal_amount, 0)
-                + ROUND(
-                    COALESCE(x.subtotal_amount, 0) * 0.07,
-                    2
-                )
-                AS DECIMAL(18,2)
-            ) AS total_amount
-
-        FROM dbo.requisitions AS r
-
-        LEFT JOIN dbo.staff AS s
-            ON s.staff_id = r.requester_staff_id
-
-        LEFT JOIN dbo.departments AS d
-            ON d.department_id = s.department_id
-
-        LEFT JOIN dbo.vendors AS v
-            ON v.vendor_id = r.preferred_vendor_id
-
-        OUTER APPLY (
-            SELECT SUM(i.line_total) AS subtotal_amount
-            FROM dbo.requisition_items AS i
-            WHERE i.requisition_id = r.requisition_id
-        ) AS x
-
-        WHERE r.requisition_id = " + requisitionId);
-
-    if (requisition.Rows.Count == 0)
+    if (!isExecutive && departmentId <= 0)
     {
-        Write(ctx, 404, new { error = "Requisition not found" });
+        Write(ctx, 403, new
+        {
+            success = false,
+            error = "ไม่พบข้อมูลแผนกของผู้ใช้งาน"
+        });
         break;
     }
 
-    // รายการสินค้าในใบขอซื้อ
-    DataTable items = Query(c, @"
-        SELECT
-            line_no,
-            item_name,
-            quantity,
-            unit_price,
-            line_total
-        FROM dbo.requisition_items
-        WHERE requisition_id = " + requisitionId + @"
-        ORDER BY line_no");
+    string requisitionFilter;
+    string purchaseOrderFilter;
+    string budgetFilter;
+    string pendingFilter;
 
-    // ประวัติการอนุมัติ
-    DataTable approvals = Query(c, @"
-        SELECT
-            a.approval_level,
-            a.approval_status,
-            a.approved_at,
-            a.comments,
-
-            LTRIM(RTRIM(
-                COALESCE(s.first_name, '') + ' ' +
-                COALESCE(s.last_name, '')
-            )) AS approver_name
-
-        FROM dbo.approvals AS a
-
-        LEFT JOIN dbo.staff AS s
-            ON s.staff_id = a.approver_staff_id
-
-        WHERE a.requisition_id = " + requisitionId + @"
-        ORDER BY a.approval_level");
-
-    Write(ctx, 200, new
+    if (isExecutive)
     {
-        requisition = Rows(requisition)[0],
-        items = Rows(items),
-        approvals = Rows(approvals)
+        // CEO / CFO: ดูข้อมูลทุกแผนก
+        requisitionFilter = "";
+        purchaseOrderFilter = "";
+        budgetFilter = "";
+
+        pendingFilter = @"
+            WHERE r.status = 'Pending Approval'";
+    }
+    else if (isStaff)
+    {
+        // Staff: เฉพาะคำขอที่ตัวเองสร้าง
+        requisitionFilter = @"
+            WHERE r.requester_staff_id = @staff_id";
+
+        purchaseOrderFilter = @"
+            WHERE EXISTS (
+                SELECT 1
+                FROM dbo.requisitions r
+                WHERE r.requisition_id = po.requisition_id
+                  AND r.requester_staff_id = @staff_id
+            )";
+
+        budgetFilter = @"
+            WHERE b.department_id = @department_id";
+
+        pendingFilter = @"
+            WHERE r.requester_staff_id = @staff_id
+              AND r.status = 'Pending Approval'";
+    }
+    else if (isProcurement)
+    {
+        // Procurement: ดูคำขอและ PO จากทุกแผนก
+        requisitionFilter = "";
+        purchaseOrderFilter = "";
+
+        // ยังคงจำกัดงบประมาณไว้เฉพาะแผนกของผู้ใช้
+        budgetFilter = @"
+            WHERE b.department_id = @department_id";
+
+        // นับเฉพาะคำขอที่รออนุมัติในระดับ Procurement
+        pendingFilter = @"
+            WHERE r.status = 'Pending Approval'
+              AND EXISTS (
+                  SELECT 1
+                  FROM dbo.approvals a
+                  INNER JOIN dbo.staff s
+                      ON s.staff_id = a.approver_staff_id
+                  WHERE a.requisition_id = r.requisition_id
+                    AND a.approval_status = 'Pending'
+                    AND a.approval_level =
+                        dbo.fn_current_approval_level(r.requisition_id)
+                    AND s.staff_role = 'Procurement'
+                    AND s.is_active = 1
+              )";
+    }
+    else if (isManager)
+    {
+        // Manager: เฉพาะคำขอและ PO ของแผนกตัวเอง
+        requisitionFilter = @"
+            WHERE EXISTS (
+                SELECT 1
+                FROM dbo.staff s
+                WHERE s.staff_id = r.requester_staff_id
+                  AND s.department_id = @department_id
+            )";
+
+        purchaseOrderFilter = @"
+            WHERE EXISTS (
+                SELECT 1
+                FROM dbo.requisitions r
+                INNER JOIN dbo.staff s
+                    ON s.staff_id = r.requester_staff_id
+                WHERE r.requisition_id = po.requisition_id
+                  AND s.department_id = @department_id
+            )";
+
+        budgetFilter = @"
+            WHERE b.department_id = @department_id";
+
+        // นับคำขอที่รออนุมัติในแผนกตัวเอง
+        pendingFilter = @"
+            WHERE r.status = 'Pending Approval'
+              AND EXISTS (
+                  SELECT 1
+                  FROM dbo.staff s
+                  WHERE s.staff_id = r.requester_staff_id
+                    AND s.department_id = @department_id
+              )";
+    }
+    else
+    {
+        Write(ctx, 403, new
+        {
+            success = false,
+            error = "ไม่มีสิทธิ์เข้าถึง Dashboard"
+        });
+        break;
+    }
+
+    
+int selectedYear;
+
+if (!int.TryParse(
+    ctx.Request.QueryString["year"],
+    out selectedYear))
+{
+    selectedYear = DateTime.Now.Year;
+}
+
+if (selectedYear < 2000 || selectedYear > 2100)
+{
+    Write(ctx, 400, new
+    {
+        success = false,
+        error = "ปีที่เลือกไม่ถูกต้อง"
     });
+    break;
+}
+
+DateTime startDate = new DateTime(selectedYear, 1, 1);
+DateTime endDate = new DateTime(selectedYear + 1, 1, 1);
+
+// กรองใบขอซื้อตามปีที่เลือก
+string requisitionYearFilter =
+    String.IsNullOrWhiteSpace(requisitionFilter)
+        ? @"WHERE r.request_date >= @StartDate
+              AND r.request_date < @EndDate"
+        : requisitionFilter + @"
+              AND r.request_date >= @StartDate
+              AND r.request_date < @EndDate";
+
+// กรองใบสั่งซื้อตามปีที่เลือก
+string purchaseOrderYearFilter =
+    String.IsNullOrWhiteSpace(purchaseOrderFilter)
+        ? @"WHERE po.po_date >= @StartDate
+              AND po.po_date < @EndDate"
+        : purchaseOrderFilter + @"
+              AND po.po_date >= @StartDate
+              AND po.po_date < @EndDate";
+
+
+    
+string summarySql = @"
+    SELECT
+        (
+            SELECT COUNT(*)
+            FROM dbo.requisitions r
+            " + requisitionYearFilter + @"
+        ) AS requisitions_count,
+
+        (
+            SELECT COUNT(*)
+            FROM dbo.requisitions r
+            " + pendingFilter + @"
+        ) AS pending_count,
+
+        (
+            SELECT COUNT(*)
+            FROM dbo.purchase_orders po
+            " + purchaseOrderYearFilter + @"
+        ) AS purchase_orders_count,
+
+        (
+            SELECT COALESCE(SUM(b.used_amount), 0)
+            FROM dbo.budget_limits b
+            " + budgetFilter + @"
+              " + (String.IsNullOrEmpty(budgetFilter)
+                    ? "WHERE"
+                    : "AND") + @" b.fiscal_year = @SelectedYear
+        ) AS budget_used,
+
+        (
+            SELECT COALESCE(SUM(b.budget_amount), 0)
+            FROM dbo.budget_limits b
+            " + budgetFilter + @"
+              " + (String.IsNullOrEmpty(budgetFilter)
+                    ? "WHERE"
+                    : "AND") + @" b.fiscal_year = @SelectedYear
+        ) AS budget_total;
+";
+
+
+    using (SqlCommand cmd = new SqlCommand(summarySql, c))
+    {
+        cmd.Parameters.Add("@staff_id", SqlDbType.Int).Value =
+            staffId;
+
+        cmd.Parameters.Add("@department_id", SqlDbType.Int).Value =
+            departmentId;
+
+        cmd.Parameters.Add("@StartDate", SqlDbType.Date).Value =
+            startDate;
+
+        cmd.Parameters.Add("@EndDate", SqlDbType.Date).Value =
+            endDate;
+
+        cmd.Parameters.Add("@SelectedYear", SqlDbType.Int).Value =
+            selectedYear;
+
+        DataTable dt = new DataTable();
+
+        using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
+        {
+            adapter.Fill(dt);
+        }
+
+        Write(ctx, 200, Rows(dt));
+    }
 
     break;
 }
 
-                case "summary":
-                    DataTable t = Query(c, @"SELECT
-                        (SELECT COUNT(*) FROM dbo.requisitions) AS requisitions_count,
-                        (SELECT COUNT(*) FROM dbo.requisitions WHERE status='Pending Approval') AS pending_count,
-                        (SELECT COUNT(*) FROM dbo.purchase_orders WHERE status<>'Cancelled') AS purchase_orders_count,
-                        (SELECT COALESCE(SUM(used_amount),0) FROM dbo.budget_limits) AS budget_used,
-                        (SELECT COALESCE(SUM(budget_amount),0) FROM dbo.budget_limits) AS budget_total");
-                    Write(ctx, 200, Rows(t));
-                    break;
+
+
+
 
                 case "requisitions":
                     Write(ctx, 200, Rows(Query(c, @"SELECT r.requisition_id, r.request_date, r.status, r.purpose,
@@ -305,18 +565,35 @@ case "requisition-detail":
 
 
                 case "vendors":
-                    Write(ctx, 200, Rows(Query(c, "SELECT vendor_id, vendor_name, tax_id, phone, email, status FROM dbo.vendors ORDER BY vendor_name")));
-                    break;
+                    {
+                        DataTable vendors = Query(c, @"
+                            SELECT
+                                vendor_id,
+                                vendor_name,
+                                tax_id,
+                                phone,
+                                email,
+                                address,
+                                status
+                            FROM dbo.vendors
+                            ORDER BY vendor_name;
+                        ");
+
+                        Write(ctx, 200, Rows(vendors));
+                        break;
+                    }
 
                 case "staff":
                     Write(ctx, 200, Rows(Query(c, "SELECT staff_id, first_name, last_name, staff_role, department_id FROM dbo.staff WHERE is_active=1 ORDER BY first_name,last_name")));
                     break;
 
                
-                case "budgets":
+
+                case "department-budget-list":
                 {
                     if (ctx.Session == null ||
-                        ctx.Session["staff_id"] == null)
+                        ctx.Session["staff_id"] == null ||
+                        ctx.Session["staff_role"] == null)
                     {
                         Write(ctx, 401, new
                         {
@@ -326,43 +603,284 @@ case "requisition-detail":
                         break;
                     }
 
-                    int departmentId;
+                    string role = Convert.ToString(ctx.Session["staff_role"]);
 
-                    if (!Int32.TryParse(
-                        ctx.Request.QueryString["department_id"],
-                        out departmentId))
+                    int departmentId = ctx.Session["department_id"] == null
+                        ? 0
+                        : Convert.ToInt32(ctx.Session["department_id"]);
+
+                    if (role != "CEO" &&
+                        role != "CFO" &&
+                        departmentId <= 0)
                     {
-                        Write(ctx, 200, new object[0]);
+                        Write(ctx, 403, new
+                        {
+                            success = false,
+                            error = "ไม่พบข้อมูลแผนกของผู้ใช้งาน"
+                        });
                         break;
                     }
 
-                    using (SqlCommand cmd = new SqlCommand(@"
-                        SELECT
-                            budget_id,
-                            department_id,
-                            fiscal_year,
-                            budget_amount,
-                            used_amount,
-                            budget_amount - used_amount AS remaining_amount
-                        FROM dbo.budget_limits
-                        WHERE department_id = @department_id
-                        ORDER BY fiscal_year DESC;
-                    ", c))
+                    int selectedYear;
+                    if (!Int32.TryParse(ctx.Request.QueryString["year"], out selectedYear))
                     {
-                        cmd.Parameters.Add("@department_id", SqlDbType.Int).Value =
-                            departmentId;
+                        selectedYear = DateTime.Now.Year;
+                    }
+
+                    if (selectedYear < 2024 || selectedYear > 2027)
+                    {
+                        Write(ctx, 400, new
+                        {
+                            success = false,
+                            error = "ปีที่เลือกไม่ถูกต้อง"
+                        });
+                        break;
+                    }
+
+                    string departmentSql = @"SELECT
+                            d.department_id,
+                            d.department_code,
+                            d.department_name,
+                            b.fiscal_year,
+
+                            CAST(COALESCE(b.budget_amount, 0)
+                                AS DECIMAL(18,2)) AS budget_amount,
+
+                            CAST(COALESCE(b.used_amount, 0)
+                                AS DECIMAL(18,2)) AS used_amount,
+
+                            CAST(
+                                COALESCE(b.budget_amount, 0)
+                                - COALESCE(b.used_amount, 0)
+                                AS DECIMAL(18,2)
+                            ) AS remaining_amount,
+
+                            CAST(
+                                CASE
+                                    WHEN COALESCE(b.budget_amount, 0) > 0
+                                    THEN COALESCE(b.used_amount, 0) * 100.0
+                                         / b.budget_amount
+                                    ELSE 0
+                                END AS DECIMAL(6,2)
+                            ) AS used_percent
+
+                        FROM dbo.departments d
+
+                        INNER JOIN dbo.budget_limits b
+                            ON b.department_id = d.department_id
+                           AND b.fiscal_year = @fiscal_year
+
+                        WHERE d.is_active = 1
+                          AND (
+                                @isExecutive = 1
+                                OR d.department_id = @department_id
+                              )
+
+                        ORDER BY d.department_name;
+                    ";
+
+                    using (SqlCommand cmd = new SqlCommand(departmentSql, c))
+                    {
+                        bool isExecutive = role == "CEO" || role == "CFO";
+
+                        cmd.Parameters.Add("@isExecutive", SqlDbType.Bit)
+                            .Value = isExecutive;
+
+                        cmd.Parameters.Add("@department_id", SqlDbType.Int)
+                            .Value = departmentId;
+                        cmd.Parameters.Add("@fiscal_year", SqlDbType.Int)
+                            .Value = selectedYear;
+
+                        DataTable dt = new DataTable();
 
                         using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
                         {
-                            DataTable dt = new DataTable();
                             adapter.Fill(dt);
-
-                            Write(ctx, 200, Rows(dt));
                         }
+
+                        Write(ctx, 200, Rows(dt));
                     }
 
                     break;
                 }
+
+
+
+                        case "department-budget-detail":
+                        {
+                            if (ctx.Session == null || ctx.Session["staff_id"] == null)
+                            {
+                                Write(ctx, 401, new
+                                {
+                                    success = false,
+                                    error = "กรุณาเข้าสู่ระบบก่อน"
+                                });
+                                break;
+                            }
+
+                            int departmentId;
+                            int fiscalYear;
+
+                            if (!Int32.TryParse(
+                                    ctx.Request.QueryString["department_id"],
+                                    out departmentId) ||
+                                departmentId <= 0)
+                            {
+                                Write(ctx, 400, new
+                                {
+                                    success = false,
+                                    error = "กรุณาระบุ department_id ให้ถูกต้อง"
+                                });
+                                break;
+                            }
+
+                            if (!Int32.TryParse(
+                                    ctx.Request.QueryString["fiscal_year"],
+                                    out fiscalYear))
+                            {
+                                Write(ctx, 400, new
+                                {
+                                    success = false,
+                                    error = "กรุณาระบุ fiscal_year ให้ถูกต้อง"
+                                });
+                                break;
+                            }
+
+                            using (SqlCommand cmd = new SqlCommand(@"
+                                SELECT
+                                    b.budget_id,
+                                    d.department_id,
+                                    d.department_name,
+                                    b.fiscal_year,
+
+                                    po.po_id,
+                                    'PO-' + RIGHT(
+                                        '000000' + CAST(po.po_id AS VARCHAR(20)), 6
+                                    ) AS document_no,
+
+                                    'REQ-' + CAST(r.requisition_id AS VARCHAR(20))
+                                        AS requisition_no,
+
+                                    CONVERT(VARCHAR(10), po.po_date, 23) AS document_date,
+
+                                    pi.line_no,
+                                    pi.item_name,
+                                    pi.quantity,
+                                    pi.unit_price,
+
+                                    CAST(
+                                        COALESCE(pi.line_total,
+                                            COALESCE(pi.quantity, 0) *
+                                            COALESCE(pi.unit_price, 0))
+                                        AS DECIMAL(18,2)
+                                    ) AS item_amount,
+
+                                    po.status AS document_status
+
+                                FROM dbo.budget_limits AS b
+                                INNER JOIN dbo.departments AS d
+                                    ON d.department_id = b.department_id
+                                INNER JOIN dbo.requisitions AS r
+                                    ON r.budget_id = b.budget_id
+                                INNER JOIN dbo.purchase_orders AS po
+                                    ON po.requisition_id = r.requisition_id
+                                INNER JOIN dbo.po_items AS pi
+                                    ON pi.po_id = po.po_id
+
+                                WHERE d.department_id = @department_id
+                                  AND b.fiscal_year = @fiscal_year
+                                  AND COALESCE(po.status, '') <> 'Cancelled'
+
+                                ORDER BY
+                                    po.po_date DESC,
+                                    po.po_id DESC,
+                                    pi.line_no ASC;
+                            ", c))
+                            {
+                                cmd.Parameters.Add("@department_id", SqlDbType.Int).Value =
+                                    departmentId;
+                                cmd.Parameters.Add("@fiscal_year", SqlDbType.Int).Value =
+                                    fiscalYear;
+
+                                DataTable dt = new DataTable();
+
+                                using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
+                                {
+                                    adapter.Fill(dt);
+                                }
+
+                                Write(ctx, 200, Rows(dt));
+                            }
+
+                            break;
+                        }
+
+                
+                    
+                    
+case "budgets":
+{
+    if (ctx.Session == null ||
+        ctx.Session["staff_id"] == null)
+    {
+        Write(ctx, 401, new
+        {
+            success = false,
+            error = "กรุณาเข้าสู่ระบบก่อน"
+        });
+        break;
+    }
+
+    int staffId;
+
+    if (!Int32.TryParse(
+        Convert.ToString(ctx.Session["staff_id"]),
+        out staffId))
+    {
+        Write(ctx, 401, new
+        {
+            success = false,
+            error = "ข้อมูลผู้ใช้ไม่ถูกต้อง"
+        });
+        break;
+    }
+
+    using (SqlCommand cmd = new SqlCommand(@"
+        SELECT
+            b.budget_id,
+            b.department_id,
+            d.department_name,
+            b.fiscal_year,
+            b.budget_amount,
+            b.used_amount,
+            b.budget_amount - b.used_amount AS remaining_amount
+        FROM dbo.budget_limits AS b
+            INNER JOIN dbo.staff AS s
+                ON s.department_id = b.department_id
+            INNER JOIN dbo.departments AS d
+                ON d.department_id = b.department_id
+            WHERE s.staff_id = @staff_id
+              AND s.is_active = 1
+              AND b.fiscal_year = 2027;
+        ", c))
+    {
+        cmd.Parameters.Add("@staff_id", SqlDbType.Int).Value =
+            staffId;
+
+        using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
+        {
+            DataTable dt = new DataTable();
+            adapter.Fill(dt);
+
+            Write(ctx, 200, Rows(dt));
+        }
+    }
+
+    break;
+}
+
+
+
 
                 case "purchase-orders":
                     Write(ctx, 200, Rows(Query(c, @"SELECT p.po_id,p.po_date,p.status,p.subtotal_amount,p.vat_rate,p.vat_amount,p.total_amount,
@@ -374,67 +892,160 @@ case "requisition-detail":
                         ORDER BY p.po_date DESC,p.po_id DESC")));
                     break;
                        
-                case "purchase-order-list":
-                {
-                    DataTable purchaseOrderList = Query(c, @"
-                        SELECT
-                            po.po_id,
-                            'PO-' + RIGHT(
-                                '000000' + CAST(po.po_id AS VARCHAR(20)), 6
-                            ) AS po_number,
+               
+case "purchase-order-list":
+{
+    // ตรวจสอบผู้ใช้จาก Session ฝั่งเซิร์ฟเวอร์
+    string role = Convert.ToString(ctx.Session["staff_role"])
+        .Trim();
 
-                            po.requisition_id,
-                            'REQ-' + CAST(po.requisition_id AS VARCHAR(20))
-                                AS requisition_number,
+    int staffId;
+    int departmentId;
 
-                            COALESCE(v.vendor_name, N'-') AS vendor_name,
-                            COALESCE(d.department_code, '') AS department_code,
-                            COALESCE(d.department_name, N'-') AS department,
+    bool hasStaffId = int.TryParse(
+        Convert.ToString(ctx.Session["staff_id"]),
+        out staffId
+    );
 
-                            CONVERT(VARCHAR(10), po.po_date, 23) AS po_date,
+    bool hasDepartmentId = int.TryParse(
+        Convert.ToString(ctx.Session["department_id"]),
+        out departmentId
+    );
 
-                            COALESCE(po.subtotal_amount, 0) AS subtotal_amount,
-                            COALESCE(po.vat_rate, 7.00) AS vat_rate,
-                            COALESCE(
-                                po.vat_amount,
-                                ROUND(COALESCE(po.subtotal_amount, 0)
-                                    * COALESCE(po.vat_rate, 7.00) / 100.0, 2)
-                            ) AS vat_amount,
-
-                            -- Prefer the saved net total. If it is NULL, rebuild it
-                            -- from subtotal + saved/calculated VAT (do not double-add VAT).
-                            COALESCE(
-                                po.total_amount,
-                                COALESCE(po.subtotal_amount, 0) + COALESCE(
-                                    po.vat_amount,
-                                    ROUND(COALESCE(po.subtotal_amount, 0)
-                                        * COALESCE(po.vat_rate, 7.00) / 100.0, 2)
-                                ),
-                                0
-                            ) AS total_amount,
-
-                            COALESCE(po.status, '') AS status
-
-                        FROM dbo.purchase_orders AS po
-
-                        LEFT JOIN dbo.requisitions AS r
-                            ON r.requisition_id = po.requisition_id
-
-                        LEFT JOIN dbo.vendors AS v
-                            ON v.vendor_id = po.vendor_id
-
-                        LEFT JOIN dbo.staff AS s
-                            ON s.staff_id = r.requester_staff_id
-
-                        LEFT JOIN dbo.departments AS d
-                            ON d.department_id = s.department_id
-
-                        ORDER BY po.po_date DESC, po.po_id DESC
-                    ");
-
-        Write(ctx, 200, Rows(purchaseOrderList));
+    if (ctx.Session["staff_role"] == null || !hasStaffId)
+    {
+        Write(ctx, 401, new
+        {
+            message = "กรุณาเข้าสู่ระบบก่อนดูใบสั่งซื้อ"
+        });
         break;
     }
+
+    string accessCondition = "";
+
+    switch (role)
+    {
+        case "CEO":
+        case "CFO":
+        case "Procurement":
+            // สามารถดูใบสั่งซื้อได้ทุกแผนก
+            break;
+
+        case "Manager":
+            if (!hasDepartmentId)
+            {
+                Write(ctx, 403, new
+                {
+                    message = "ไม่พบแผนกของผู้ใช้งาน"
+                });
+                break;
+            }
+
+            accessCondition = @"
+                AND s.department_id = " + departmentId;
+            break;
+
+        case "Staff":
+            // ดูเฉพาะใบสั่งซื้อที่มาจากใบขอซื้อของตนเอง
+            accessCondition = @"
+                AND r.requester_staff_id = " + staffId;
+            break;
+
+        default:
+            Write(ctx, 403, new
+            {
+                message = "ไม่มีสิทธิ์ดูรายการใบสั่งซื้อ"
+            });
+            break;
+    }
+
+    // หยุดการทำงานเมื่อ Manager ไม่มี department_id
+    // หรือ Role ไม่ได้รับอนุญาต
+    if (
+    (role == "Manager" && !hasDepartmentId) ||
+    (
+        role != "CEO" &&
+        role != "CFO" &&
+        role != "Procurement" &&
+        role != "Manager" &&
+        role != "Staff"
+    )
+)
+{
+    break;
+}
+
+    DataTable purchaseOrderList = Query(c, @"
+        SELECT
+            po.po_id,
+
+            'PO-' + RIGHT(
+                '000000' + CAST(po.po_id AS VARCHAR(20)), 6
+            ) AS po_number,
+
+            po.requisition_id,
+
+            'REQ-' + CAST(
+                po.requisition_id AS VARCHAR(20)
+            ) AS requisition_number,
+
+            COALESCE(v.vendor_name, N'-') AS vendor_name,
+            COALESCE(d.department_code, '') AS department_code,
+            COALESCE(d.department_name, N'-') AS department,
+
+            CONVERT(VARCHAR(10), po.po_date, 23) AS po_date,
+
+            COALESCE(po.subtotal_amount, 0) AS subtotal_amount,
+            COALESCE(po.vat_rate, 7.00) AS vat_rate,
+
+            COALESCE(
+                po.vat_amount,
+                ROUND(
+                    COALESCE(po.subtotal_amount, 0)
+                    * COALESCE(po.vat_rate, 7.00) / 100.0,
+                    2
+                )
+            ) AS vat_amount,
+
+            COALESCE(
+                po.total_amount,
+                COALESCE(po.subtotal_amount, 0) + COALESCE(
+                    po.vat_amount,
+                    ROUND(
+                        COALESCE(po.subtotal_amount, 0)
+                        * COALESCE(po.vat_rate, 7.00) / 100.0,
+                        2
+                    )
+                ),
+                0
+            ) AS total_amount,
+
+            COALESCE(po.status, '') AS status
+
+        FROM dbo.purchase_orders AS po
+
+        LEFT JOIN dbo.requisitions AS r
+            ON r.requisition_id = po.requisition_id
+
+        LEFT JOIN dbo.vendors AS v
+            ON v.vendor_id = po.vendor_id
+
+        LEFT JOIN dbo.staff AS s
+            ON s.staff_id = r.requester_staff_id
+
+        LEFT JOIN dbo.departments AS d
+            ON d.department_id = s.department_id
+
+        WHERE 1 = 1
+    " + accessCondition + @"
+
+        ORDER BY po.po_date DESC, po.po_id DESC
+    ");
+
+    Write(ctx, 200, Rows(purchaseOrderList));
+    break;
+}
+
 
 
                 case "approvals":
@@ -476,7 +1087,12 @@ case "requisition-detail":
                                 COALESCE(d.department_name, N'-') AS department,
                                 CONVERT(VARCHAR(10), r.request_date, 23)
                                     AS request_date,
-                                COALESCE(ri.total_amount, 0) AS total_amount,
+                                COALESCE(ri.subtotal_amount, 0) AS subtotal_amount,
+                                CAST(7.00 AS DECIMAL(5,2)) AS vat_rate,
+                                ROUND(COALESCE(ri.subtotal_amount, 0) * 0.07, 2) AS vat_amount,
+                                COALESCE(ri.subtotal_amount, 0)
+                                    + ROUND(COALESCE(ri.subtotal_amount, 0) * 0.07, 2)
+                                    AS total_amount,
                                 COALESCE(v.vendor_name, N'-') AS vendor_name,
                                 r.status,
                                 a.approval_level,
@@ -491,7 +1107,10 @@ case "requisition-detail":
                             LEFT JOIN dbo.vendors AS v
                                 ON v.vendor_id = r.preferred_vendor_id
                             OUTER APPLY (
-                                SELECT SUM(i.line_total) AS total_amount
+                                SELECT SUM(
+                                    COALESCE(i.line_total,
+                                        COALESCE(i.quantity, 0) * COALESCE(i.unit_price, 0))
+                                ) AS subtotal_amount
                                 FROM dbo.requisition_items AS i
                                 WHERE i.requisition_id = r.requisition_id
                             ) AS ri
@@ -521,26 +1140,62 @@ case "requisition-detail":
 
 
 
-                case "monthly-requisitions":
-                    string sql = @"
-                        SELECT
-                            YEAR(request_date) AS request_year,
-                            MONTH(request_date) AS request_month,
-                            COUNT(*) AS requisition_count
-                        FROM dbo.requisitions
-                        WHERE request_date >= DATEADD(
-                            MONTH, -11,
-                            DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
-                        )
-                        GROUP BY
-                            YEAR(request_date),
-                            MONTH(request_date)
-                        ORDER BY
-                            request_year,
-                            request_month;";
+               
+case "monthly-requisitions":
+{
+    int selectedYear;
 
-                    Write(ctx, 200, Rows(Query(c, sql)));
-                    break;
+    if (!int.TryParse(
+        ctx.Request.QueryString["year"],
+        out selectedYear))
+    {
+        selectedYear = DateTime.Now.Year;
+    }
+
+    if (selectedYear < 2000 || selectedYear > 2100)
+    {
+        Write(ctx, 400, new
+        {
+            error = "ปีที่เลือกไม่ถูกต้อง"
+        });
+        break;
+    }
+
+    string sql = @"
+        SELECT
+            YEAR(request_date) AS request_year,
+            MONTH(request_date) AS request_month,
+            COUNT(*) AS requisition_count
+        FROM dbo.requisitions
+        WHERE request_date >= @StartDate
+          AND request_date < @EndDate
+        GROUP BY
+            YEAR(request_date),
+            MONTH(request_date)
+        ORDER BY
+            request_year,
+            request_month;";
+
+    using (SqlCommand cmd = new SqlCommand(sql, c))
+    {
+        cmd.Parameters.Add("@StartDate", SqlDbType.Date).Value =
+            new DateTime(selectedYear, 1, 1);
+
+        cmd.Parameters.Add("@EndDate", SqlDbType.Date).Value =
+            new DateTime(selectedYear + 1, 1, 1);
+
+        using (SqlDataAdapter adapter = new SqlDataAdapter(cmd))
+        {
+            DataTable dt = new DataTable();
+            adapter.Fill(dt);
+
+            Write(ctx, 200, Rows(dt));
+        }
+    }
+
+    break;
+}
+
 
                 
                 case "pending-requests":
@@ -603,151 +1258,395 @@ case "requisition-detail":
                     break;
 
                         
-                case "goods-receipt-list":
-                {
-                    DataTable goodsReceiptList = Query(c, @"
-                        ;WITH LatestReceipt AS
-                        (
-                            SELECT
-                                gr.receipt_id,
-                                gr.po_id,
-                                gr.line_no,
-                                gr.received_by_staff_id,
-                                gr.received_date,
-                                gr.received_status,
-                                ROW_NUMBER() OVER
-                                (
-                                    PARTITION BY gr.po_id, gr.line_no
-                                    ORDER BY gr.received_date DESC, gr.receipt_id DESC
-                                ) AS rn
-                            FROM dbo.goods_receipts AS gr
-                        ),
-                        ReceiptSummary AS
-                        (
-                            SELECT
-                                po_id,
-                                COUNT(*) AS item_count,
-                                SUM(
-                                    CASE
-                                        WHEN received_status = 'Accepted'
-                                            THEN 1
-                                        ELSE 0
-                                    END
-                                ) AS accepted_count,
-                                SUM(
-                                    CASE
-                                        WHEN received_status = 'Partial'
-                                            THEN 1
-                                        ELSE 0
-                                    END
-                                ) AS partial_count,
-                                MAX(received_date) AS last_received_date,
-                                MAX(receipt_id) AS latest_receipt_id,
-                                SUM(
-                                    CASE
-                                        WHEN received_status = 'Accepted'
-                                            THEN 0
-                                        ELSE 1
-                                    END
-                                ) AS outstanding_count
-                            FROM LatestReceipt
-                            WHERE rn = 1
-                            GROUP BY po_id
-                        ),
-                        POItemsSummary AS
-                        (
-                            SELECT
-                                po_id,
-                                SUM(line_total) AS order_amount,
-                                COUNT(*) AS total_items
-                            FROM dbo.po_items
-                            GROUP BY po_id
-                        )
-                        SELECT
-                            COALESCE(rs.latest_receipt_id, po.po_id) AS receipt_id,
-                            po.po_id,
-                            'PO-' + RIGHT(
-                                '000000' + CAST(po.po_id AS VARCHAR(20)), 6
-                            ) AS po_number,
+                
+                    
+case "receivable-po-items":
+{
+    // 1. ตรวจสอบ Session
+    if (ctx.Session == null ||
+        ctx.Session["staff_id"] == null ||
+        ctx.Session["staff_role"] == null)
+    {
+        Write(ctx, 401, new
+        {
+            message = "กรุณาเข้าสู่ระบบก่อน"
+        });
+        break;
+    }
 
-                            COALESCE(v.vendor_name, N'-') AS vendor_name,
+    string role = Convert.ToString(
+        ctx.Session["staff_role"]).Trim();
 
-                            COALESCE(d.department_code, '') AS department_code,
-                            COALESCE(d.department_name, N'-') AS department,
+    int staffId;
+    int departmentId;
 
-                            CONVERT(
-                                VARCHAR(10),
-                                rs.last_received_date,
-                                23
-                            ) AS received_date,
+    bool hasStaffId = int.TryParse(
+        Convert.ToString(ctx.Session["staff_id"]),
+        out staffId);
 
-                            COALESCE(pi.order_amount, 0) AS order_amount,
+    bool hasDepartmentId = int.TryParse(
+        Convert.ToString(ctx.Session["department_id"]),
+        out departmentId);
 
+    if (!hasStaffId)
+    {
+        Write(ctx, 401, new
+        {
+            message = "ข้อมูลผู้ใช้งานไม่ถูกต้อง"
+        });
+        break;
+    }
+
+    // 2. กำหนดสิทธิ์การดูรายการสินค้าที่รอรับ
+    string accessCondition = "";
+
+    if (role == "CEO" ||
+        role == "CFO" ||
+        role == "Procurement")
+    {
+        // ดูได้ทุกแผนก
+    }
+    else if (role == "Manager")
+    {
+        if (!hasDepartmentId)
+        {
+            Write(ctx, 403, new
+            {
+                message = "ไม่พบแผนกของผู้ใช้งาน"
+            });
+            break;
+        }
+
+        accessCondition =
+            " AND st.department_id = " + departmentId;
+    }
+    else if (role == "Staff")
+    {
+        accessCondition =
+            " AND r.requester_staff_id = " + staffId;
+    }
+    else
+    {
+        Write(ctx, 403, new
+        {
+            message = "ไม่มีสิทธิ์ดูรายการสินค้าที่รอรับ"
+        });
+        break;
+    }
+
+    // 3. ดึงรายการสินค้าที่รับไม่ครบ
+    DataTable receivableItems = Query(c, @"
+        ;WITH ReceiptByLine AS
+        (
+            SELECT
+                gr.po_id,
+                gr.line_no,
+                SUM(
+                    CASE
+                        WHEN gr.received_status IN ('Accepted', 'Partial')
+                            THEN COALESCE(gr.received_quantity, 0)
+                        ELSE 0
+                    END
+                ) AS received_quantity,
+                MAX(gr.received_date) AS last_received_date
+            FROM dbo.goods_receipts AS gr
+            GROUP BY gr.po_id, gr.line_no
+        )
+        SELECT
+            po.po_id,
+
+            'PO-' + RIGHT(
+                '000000' + CAST(po.po_id AS VARCHAR(20)), 6
+            ) AS po_number,
+
+            pi.line_no,
+            pi.item_name,
+            pi.quantity AS ordered_quantity,
+            pi.unit_price,
+            pi.line_total,
+
+            COALESCE(rb.received_quantity, 0)
+                AS received_quantity,
+
+            CASE
+                WHEN pi.quantity - COALESCE(rb.received_quantity, 0) < 0
+                    THEN 0
+                ELSE pi.quantity - COALESCE(rb.received_quantity, 0)
+            END AS remaining_quantity,
+
+            COALESCE(v.vendor_name, N'-') AS vendor_name,
+            COALESCE(d.department_name, N'-') AS department,
+
+            CASE
+                WHEN COALESCE(rb.received_quantity, 0) = 0
+                    THEN 'Pending'
+                WHEN COALESCE(rb.received_quantity, 0) >= pi.quantity
+                    THEN 'Accepted'
+                ELSE 'Partial'
+            END AS received_status,
+
+            CONVERT(VARCHAR(10), rb.last_received_date, 23)
+                AS last_received_date
+
+        FROM dbo.purchase_orders AS po
+
+        INNER JOIN dbo.po_items AS pi
+            ON pi.po_id = po.po_id
+
+        LEFT JOIN ReceiptByLine AS rb
+            ON rb.po_id = pi.po_id
+           AND rb.line_no = pi.line_no
+
+        LEFT JOIN dbo.vendors AS v
+            ON v.vendor_id = po.vendor_id
+
+        LEFT JOIN dbo.requisitions AS r
+            ON r.requisition_id = po.requisition_id
+
+        LEFT JOIN dbo.staff AS st
+            ON st.staff_id = r.requester_staff_id
+
+        LEFT JOIN dbo.departments AS d
+            ON d.department_id = st.department_id
+
+        WHERE COALESCE(po.status, '') NOT IN ('Cancelled', 'Rejected')
+          AND COALESCE(rb.received_quantity, 0) < pi.quantity
+    " + accessCondition + @"
+
+        ORDER BY po.po_date DESC, po.po_id DESC, pi.line_no ASC;
+    ");
+
+    Write(ctx, 200, Rows(receivableItems));
+    break;
+}
+
+
+
+                
+                
+case "goods-receipt-list":
+{
+    // 1. ตรวจสอบ Session
+    if (ctx.Session == null ||
+        ctx.Session["staff_id"] == null ||
+        ctx.Session["staff_role"] == null)
+    {
+        Write(ctx, 401, new
+        {
+            message = "กรุณาเข้าสู่ระบบก่อน"
+        });
+        break;
+    }
+
+    string role = Convert.ToString(
+        ctx.Session["staff_role"]).Trim();
+
+    int staffId;
+    int departmentId;
+
+    bool hasStaffId = int.TryParse(
+        Convert.ToString(ctx.Session["staff_id"]),
+        out staffId);
+
+    bool hasDepartmentId = int.TryParse(
+        Convert.ToString(ctx.Session["department_id"]),
+        out departmentId);
+
+    if (!hasStaffId)
+    {
+        Write(ctx, 401, new
+        {
+            message = "ข้อมูลผู้ใช้งานไม่ถูกต้อง"
+        });
+        break;
+    }
+
+    // 2. กำหนดเงื่อนไขการเข้าถึง
+    string accessCondition = "";
+
+    if (role == "CEO" ||
+        role == "CFO" ||
+        role == "Procurement")
+    {
+        // ดูรายการได้ทุกแผนก
+    }
+    else if (role == "Manager")
+    {
+        if (!hasDepartmentId)
+        {
+            Write(ctx, 403, new
+            {
+                message = "ไม่พบแผนกของผู้ใช้งาน"
+            });
+            break;
+        }
+
+        accessCondition =
+            " AND s.department_id = " + departmentId;
+    }
+    else if (role == "Staff")
+    {
+        accessCondition =
+            " AND r.requester_staff_id = " + staffId;
+    }
+    else
+    {
+        Write(ctx, 403, new
+        {
+            message = "ไม่มีสิทธิ์ดูข้อมูลรับสินค้า"
+        });
+        break;
+    }
+
+    // 3. ดึงรายการรับสินค้าตามสิทธิ์
+    DataTable goodsReceiptList = Query(c, @"
+        ;WITH ReceiptByLine AS
+        (
+            SELECT
+                gr.po_id,
+                gr.line_no,
+                SUM(
+                    CASE
+                        WHEN gr.received_status IN ('Accepted', 'Partial')
+                            THEN COALESCE(gr.received_quantity, 0)
+                        ELSE 0
+                    END
+                ) AS received_quantity,
+                MAX(gr.received_date) AS last_received_date,
+                MAX(gr.receipt_id) AS latest_receipt_id
+            FROM dbo.goods_receipts AS gr
+            GROUP BY gr.po_id, gr.line_no
+        ),
+        ReceiptSummary AS
+        (
+            SELECT
+                po_id,
+                MAX(last_received_date) AS last_received_date,
+                MAX(latest_receipt_id) AS latest_receipt_id,
+                COUNT(*) AS receipt_item_count,
+                SUM(
+                    CASE
+                        WHEN received_quantity > 0 THEN 1
+                        ELSE 0
+                    END
+                ) AS received_item_count,
+                SUM(received_quantity) AS received_quantity
+            FROM ReceiptByLine
+            GROUP BY po_id
+        ),
+        POItemsSummary AS
+        (
+            SELECT
+                po_id,
+                SUM(line_total) AS order_amount,
+                COUNT(*) AS item_count,
+                SUM(quantity) AS total_quantity
+            FROM dbo.po_items
+            GROUP BY po_id
+        ),
+        AcceptedValue AS
+        (
+            SELECT
+                pi.po_id,
+                SUM(
+                    CASE
+                        WHEN pi.quantity > 0 THEN
+                            (pi.line_total * 1.0 / pi.quantity) *
                             CASE
-                                WHEN rs.po_id IS NULL THEN 0
-                                ELSE COALESCE(
-                                    (
-                                        SELECT SUM(p2.line_total)
-                                        FROM dbo.po_items AS p2
-                                        INNER JOIN LatestReceipt AS lr
-                                            ON lr.po_id = p2.po_id
-                                           AND lr.line_no = p2.line_no
-                                           AND lr.rn = 1
-                                        WHERE p2.po_id = po.po_id
-                                          AND lr.received_status = 'Accepted'
-                                    ), 0
-                                )
-                            END AS accepted_amount,
+                                WHEN COALESCE(rb.received_quantity, 0)
+                                     > pi.quantity
+                                    THEN pi.quantity
+                                ELSE COALESCE(rb.received_quantity, 0)
+                            END
+                        ELSE 0
+                    END
+                ) AS accepted_amount
+            FROM dbo.po_items AS pi
+            LEFT JOIN ReceiptByLine AS rb
+                ON rb.po_id = pi.po_id
+               AND rb.line_no = pi.line_no
+            GROUP BY pi.po_id
+        )
+        SELECT
+            COALESCE(rs.latest_receipt_id, po.po_id) AS receipt_id,
+            po.po_id,
 
-                            COALESCE(pi.order_amount, 0) -
-                            CASE
-                                WHEN rs.po_id IS NULL THEN 0
-                                ELSE COALESCE(
-                                    (
-                                        SELECT SUM(p2.line_total)
-                                        FROM dbo.po_items AS p2
-                                        INNER JOIN LatestReceipt AS lr
-                                            ON lr.po_id = p2.po_id
-                                           AND lr.line_no = p2.line_no
-                                           AND lr.rn = 1
-                                        WHERE p2.po_id = po.po_id
-                                          AND lr.received_status = 'Accepted'
-                                    ), 0
-                                )
-                            END AS remaining_amount,
+            'PO-' + RIGHT(
+                '000000' + CAST(po.po_id AS VARCHAR(20)), 6
+            ) AS po_number,
 
-                            CASE
-                                WHEN rs.po_id IS NULL THEN 'Pending'
-                                WHEN rs.accepted_count = rs.item_count
-                                     AND rs.partial_count = 0
-                                    THEN 'Received'
-                                WHEN rs.accepted_count > 0
-                                     OR rs.partial_count > 0
-                                    THEN 'Partial'
-                                ELSE 'Pending'
-                            END AS receipt_status,
+            COALESCE(v.vendor_name, N'-') AS vendor_name,
+            COALESCE(d.department_code, '') AS department_code,
+            COALESCE(d.department_name, N'-') AS department,
 
-                            COALESCE(rs.item_count, 0) AS receipt_item_count
+            CONVERT(VARCHAR(10), rs.last_received_date, 23)
+                AS received_date,
 
-                        FROM dbo.purchase_orders AS po
-                        LEFT JOIN dbo.vendors AS v
-                            ON v.vendor_id = po.vendor_id
-                        LEFT JOIN dbo.requisitions AS r
-                            ON r.requisition_id = po.requisition_id
-                        LEFT JOIN dbo.staff AS s
-                            ON s.staff_id = r.requester_staff_id
-                        LEFT JOIN dbo.departments AS d
-                            ON d.department_id = s.department_id
-                        LEFT JOIN POItemsSummary AS pi
-                            ON pi.po_id = po.po_id
-                        LEFT JOIN ReceiptSummary AS rs
-                            ON rs.po_id = po.po_id
-                        ORDER BY po.po_date DESC, po.po_id DESC
-                    ");
+            COALESCE(pi.order_amount, 0) AS order_amount,
+            COALESCE(av.accepted_amount, 0) AS accepted_amount,
 
-                    Write(ctx, 200, Rows(goodsReceiptList));
-                    break;
-                }
+            COALESCE(pi.order_amount, 0)
+                - COALESCE(av.accepted_amount, 0)
+                AS remaining_amount,
+
+            CASE
+                WHEN COALESCE(rs.received_quantity, 0) = 0
+                    THEN 'Pending'
+
+                WHEN COALESCE(rs.received_item_count, 0) = pi.item_count
+                     AND NOT EXISTS
+                     (
+                         SELECT 1
+                         FROM dbo.po_items AS p2
+                         LEFT JOIN ReceiptByLine AS rb2
+                             ON rb2.po_id = p2.po_id
+                            AND rb2.line_no = p2.line_no
+                         WHERE p2.po_id = po.po_id
+                           AND COALESCE(rb2.received_quantity, 0)
+                               < p2.quantity
+                     )
+                    THEN 'Received'
+
+                ELSE 'Partial'
+            END AS receipt_status,
+
+            COALESCE(rs.received_item_count, 0)
+                AS receipt_item_count
+
+        FROM dbo.purchase_orders AS po
+
+        LEFT JOIN dbo.vendors AS v
+            ON v.vendor_id = po.vendor_id
+
+        LEFT JOIN dbo.requisitions AS r
+            ON r.requisition_id = po.requisition_id
+
+        LEFT JOIN dbo.staff AS s
+            ON s.staff_id = r.requester_staff_id
+
+        LEFT JOIN dbo.departments AS d
+            ON d.department_id = s.department_id
+
+        LEFT JOIN POItemsSummary AS pi
+            ON pi.po_id = po.po_id
+
+        LEFT JOIN ReceiptSummary AS rs
+            ON rs.po_id = po.po_id
+
+        LEFT JOIN AcceptedValue AS av
+            ON av.po_id = po.po_id
+
+        WHERE 1 = 1
+    " + accessCondition + @"
+
+        ORDER BY po.po_date DESC, po.po_id DESC
+    ");
+
+    Write(ctx, 200, Rows(goodsReceiptList));
+    break;
+}
+
+
 
                 case "me":
                     {
@@ -824,6 +1723,7 @@ case "requisition-detail":
                     Write(ctx, 400, new { error = "Unknown GET action" });
                     break;
             }
+
         }
     }
 
@@ -854,6 +1754,7 @@ case "requisition-detail":
                     using (SqlCommand cmd = new SqlCommand(@"
                         SELECT
                             staff_id,
+                            department_id,
                             first_name,
                             last_name,
                             staff_role
@@ -880,6 +1781,13 @@ case "requisition-detail":
                             }
 
                             int staffId = Convert.ToInt32(reader["staff_id"]);
+
+                            int? departmentId = reader["department_id"] == DBNull.Value
+                            ? (int?)null
+                            : Convert.ToInt32(reader["department_id"]);
+                                        
+
+
                             string firstName = Convert.ToString(reader["first_name"]);
                             string lastName = Convert.ToString(reader["last_name"]);
                             string role = Convert.ToString(reader["staff_role"]);
@@ -891,6 +1799,7 @@ case "requisition-detail":
                             ctx.Session["staff_id"] = staffId;
                             ctx.Session["staff_name"] = staffName;
                             ctx.Session["staff_role"] = role;
+                            ctx.Session["department_id"] = departmentId;
 
                             Write(ctx, 200, new
                             {
@@ -899,6 +1808,7 @@ case "requisition-detail":
                                 user = new
                                 {
                                     staff_id = staffId,
+                                    department_id = departmentId,
                                     name = staffName,
                                     staff_role = role
                                 }
@@ -944,6 +1854,49 @@ case "requisition-detail":
                         string firstName = nameParts[0];
                         string lastName = nameParts.Length > 1 ? nameParts[1] : "";
 
+                        if (firstName.Length > 100 || lastName.Length > 100)
+                        {
+                            Write(ctx, 400, new
+                            {
+                                success = false,
+                                error = "ชื่อและนามสกุลต้องมีความยาวไม่เกิน 100 ตัวอักษรต่อช่อง"
+                            });
+                            return;
+                        }
+
+                        if (email.Length > 50)
+                        {
+                            Write(ctx, 400, new
+                            {
+                                success = false,
+                                error = "อีเมลต้องมีความยาวไม่เกิน 50 ตัวอักษร"
+                            });
+                            return;
+                        }
+
+                        if (!String.IsNullOrWhiteSpace(email))
+                        {
+                            using (SqlCommand checkEmail = new SqlCommand(@"
+                                SELECT COUNT(*)
+                                FROM dbo.staff
+                                WHERE email = @email
+                                  AND staff_id <> @staff_id;", c))
+                            {
+                                checkEmail.Parameters.Add("@email", SqlDbType.VarChar, 50).Value = email;
+                                checkEmail.Parameters.Add("@staff_id", SqlDbType.Int).Value = staffId;
+
+                                if (Convert.ToInt32(checkEmail.ExecuteScalar()) > 0)
+                                {
+                                    Write(ctx, 409, new
+                                    {
+                                        success = false,
+                                        error = "อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว"
+                                    });
+                                    return;
+                                }
+                            }
+                        }
+
                         using (SqlCommand cmd = new SqlCommand(@"
                             UPDATE dbo.staff
                             SET first_name = @first_name,
@@ -958,7 +1911,7 @@ case "requisition-detail":
                             cmd.Parameters.Add("@last_name", SqlDbType.NVarChar, 100)
                                 .Value = lastName;
 
-                            cmd.Parameters.Add("@email", SqlDbType.VarChar, 255)
+                            cmd.Parameters.Add("@email", SqlDbType.VarChar, 50)
                                 .Value = String.IsNullOrWhiteSpace(email)
                                     ? (object)DBNull.Value
                                     : email;
@@ -1090,90 +2043,68 @@ case "requisition-detail":
                         return;
                     }
 
-                    // 2. ใช้ผู้ขอซื้อจาก Session เท่านั้น
-                    int requester = Convert.ToInt32(
-                        ctx.Session["staff_id"]
-                    );
+                     // 2. ใช้ผู้ขอซื้อจาก Session เท่านั้น
+                        int requester = Convert.ToInt32(
+                            ctx.Session["staff_id"]
+                        );
 
-                    int budget = Int(body, "budget_id");
-                    int selectedDepartment = Int(body, "department_id");
+                        int budget = Int(body, "budget_id");
 
-                    string role = Convert.ToString(
-                        ctx.Session["staff_role"]
-                    );
+                        // 3. อ่านแผนกจริงของผู้ใช้
+                        int requesterDepartment;
 
-                    bool canChooseOtherDepartment =
-                        String.Equals(role, "CEO",
-                            StringComparison.OrdinalIgnoreCase) ||
-                        String.Equals(role, "CFO",
-                            StringComparison.OrdinalIgnoreCase);
-
-                    // 3. อ่านแผนกจริงของผู้ใช้
-                    int requesterDepartment;
-
-                    using (SqlCommand cmd = new SqlCommand(@"
-                        SELECT department_id
-                        FROM dbo.staff
-                        WHERE staff_id = @staff_id
-                          AND is_active = 1;
-                    ", c))
-                    {
-                        cmd.Parameters.Add("@staff_id", SqlDbType.Int).Value =
-                            requester;
-
-                        object result = cmd.ExecuteScalar();
-
-                        if (result == null || result == DBNull.Value)
+                        using (SqlCommand cmd = new SqlCommand(@"
+                            SELECT department_id
+                            FROM dbo.staff
+                            WHERE staff_id = @staff_id
+                              AND is_active = 1;
+                        ", c))
                         {
-                            Write(ctx, 403, new
+                            cmd.Parameters.Add("@staff_id", SqlDbType.Int).Value =
+                                requester;
+
+                            object result = cmd.ExecuteScalar();
+
+                            if (result == null || result == DBNull.Value)
                             {
-                                success = false,
-                                error = "ไม่พบผู้ใช้ที่มีสิทธิ์ใช้งาน"
-                            });
-                            return;
+                                Write(ctx, 403, new
+                                {
+                                    success = false,
+                                    error = "ไม่พบผู้ใช้ที่มีสิทธิ์ใช้งาน"
+                                });
+                                return;
+                            }
+
+                            requesterDepartment = Convert.ToInt32(result);
                         }
 
-                        requesterDepartment = Convert.ToInt32(result);
-                    }
-
-                    // 4. ผู้ใช้ทั่วไปเลือกได้เฉพาะแผนกตัวเอง
-                    if (!canChooseOtherDepartment &&
-                        selectedDepartment != requesterDepartment)
-                    {
-                        Write(ctx, 403, new
+                        // 4. ตรวจสอบว่างบเป็นของแผนกผู้ขอซื้อและปี 2026 จริง
+                        using (SqlCommand cmd = new SqlCommand(@"
+                            SELECT COUNT(*)
+                            FROM dbo.budget_limits
+                            WHERE budget_id = @budget_id
+                              AND department_id = @department_id
+                              AND fiscal_year = 2027;
+                        ", c))
                         {
-                            success = false,
-                            error = "คุณไม่มีสิทธิ์สร้างใบขอซื้อในแผนกนี้"
-                        });
-                        return;
-                    }
+                            cmd.Parameters.Add("@budget_id", SqlDbType.Int).Value =
+                                budget;
 
-                    // 5. ตรวจสอบว่างบประมาณเป็นของแผนกที่เลือกจริง
-                    using (SqlCommand cmd = new SqlCommand(@"
-                        SELECT COUNT(*)
-                        FROM dbo.budget_limits
-                        WHERE budget_id = @budget_id
-                          AND department_id = @department_id;
-                    ", c))
-                    {
-                        cmd.Parameters.Add("@budget_id", SqlDbType.Int).Value =
-                            budget;
+                            cmd.Parameters.Add("@department_id", SqlDbType.Int).Value =
+                                requesterDepartment;
 
-                        cmd.Parameters.Add("@department_id", SqlDbType.Int).Value =
-                            selectedDepartment;
+                            int allowed = Convert.ToInt32(cmd.ExecuteScalar());
 
-                        int allowed = Convert.ToInt32(cmd.ExecuteScalar());
-
-                        if (allowed == 0)
-                        {
-                            Write(ctx, 403, new
+                            if (allowed == 0)
                             {
-                                success = false,
-                                error = "งบประมาณไม่ตรงกับแผนกที่เลือก"
-                            });
-                            return;
+                                Write(ctx, 403, new
+                                {
+                                    success = false,
+                                    error = "คุณเลือกได้เฉพาะงบปี 2026 ของแผนกตัวเอง"
+                                });
+                                return;
+                            }
                         }
-                    }
 
                     // 6. อ่านข้อมูลใบขอซื้อ
                     int? vendor = NullableInt(body, "preferred_vendor_id");
@@ -1353,11 +2284,153 @@ case "requisition-detail":
 
             
             
-if (action == "approve")
+            if (action == "approve")
+            {
+                // 1. ตรวจสอบ Session
+                if (ctx.Session == null ||
+                    ctx.Session["staff_id"] == null)
+                {
+                    Write(ctx, 401, new
+                    {
+                        success = false,
+                        error = "กรุณาเข้าสู่ระบบก่อน"
+                    });
+                    return;
+                }
+
+                // 2. ใช้ตัวตนจาก Session ไม่รับ staff_id จากหน้าเว็บ
+                int req = Int(body, "requisition_id");
+                int staff = Convert.ToInt32(ctx.Session["staff_id"]);
+
+                string decision = Str(body, "decision");
+                string comments = Str(body, "comments");
+                int? vendor = NullableInt(body, "vendor_id");
+
+                if (req <= 0)
+                {
+                    Write(ctx, 400, new
+                    {
+                        error = "รหัสใบขอซื้อไม่ถูกต้อง"
+                    });
+                    return;
+                }
+
+                if (String.IsNullOrWhiteSpace(decision))
+                {
+                    Write(ctx, 400, new
+                    {
+                        error = "กรุณาระบุผลการพิจารณา"
+                    });
+                    return;
+                }
+
+                decision = decision.Trim();
+
+                if (!decision.Equals("Approved",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !decision.Equals("Rejected",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    Write(ctx, 400, new
+                    {
+                        error = "decision ต้องเป็น Approved หรือ Rejected"
+                    });
+                    return;
+                }
+
+                if (decision.Equals("Rejected",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    String.IsNullOrWhiteSpace(comments))
+                {
+                    Write(ctx, 400, new
+                    {
+                        error = "กรุณาระบุเหตุผลกรณีไม่อนุมัติ"
+                    });
+                    return;
+                }
+
+                // 3. อ่าน VAT
+                decimal vatRate = 7.00m;
+                object vatValue;
+
+                if (body.TryGetValue("vat_rate", out vatValue) &&
+                    vatValue != null &&
+                    !String.IsNullOrWhiteSpace(Convert.ToString(vatValue)))
+                {
+                    if (!Decimal.TryParse(
+                        Convert.ToString(vatValue),
+                        System.Globalization.NumberStyles.Number,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out vatRate))
+                    {
+                        Write(ctx, 400, new
+                        {
+                            error = "Invalid vat_rate"
+                        });
+                        return;
+                    }
+                }
+
+                if (vatRate < 0 || vatRate > 100)
+                {
+                    Write(ctx, 400, new
+                    {
+                        error = "vat_rate ต้องอยู่ระหว่าง 0 ถึง 100"
+                    });
+                    return;
+                }
+
+                // 4. เรียก Stored Procedure
+                using (SqlCommand cmd =
+                    new SqlCommand("dbo.sp_approve_purchase_order", c))
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("@requisition_id", SqlDbType.Int).Value =
+                        req;
+
+                    cmd.Parameters.Add("@approver_staff_id", SqlDbType.Int).Value =
+                        staff;
+
+                    cmd.Parameters.Add("@decision", SqlDbType.VarChar, 10).Value =
+                        decision.Equals("Approved",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "Approved"
+                            : "Rejected";
+
+                    cmd.Parameters.Add("@vendor_id", SqlDbType.Int).Value =
+                        (object)vendor ?? DBNull.Value;
+
+                    SqlParameter vatParam =
+                        cmd.Parameters.Add("@vat_rate", SqlDbType.Decimal);
+
+                    vatParam.Precision = 5;
+                    vatParam.Scale = 2;
+                    vatParam.Value = vatRate;
+
+                    cmd.Parameters.Add("@comments", SqlDbType.NVarChar, 1000).Value =
+                        String.IsNullOrWhiteSpace(comments)
+                            ? (object)DBNull.Value
+                            : comments.Trim();
+
+                    DataTable result = new DataTable();
+
+                    using (SqlDataAdapter da = new SqlDataAdapter(cmd))
+                    {
+                        da.Fill(result);
+                    }
+
+                    Write(ctx, 200, Rows(result));
+                    return;
+                }
+            }
+            
+            
+if (action == "save-goods-receipt")
 {
-    // 1. ตรวจสอบ Session
     if (ctx.Session == null ||
-        ctx.Session["staff_id"] == null)
+        ctx.Session["staff_id"] == null ||
+        ctx.Session["staff_role"] == null)
     {
         Write(ctx, 401, new
         {
@@ -1367,132 +2440,310 @@ if (action == "approve")
         return;
     }
 
-    // 2. ใช้ตัวตนจาก Session ไม่รับ staff_id จากหน้าเว็บ
-    int req = Int(body, "requisition_id");
-    int staff = Convert.ToInt32(ctx.Session["staff_id"]);
+    int staffId;
+    int departmentId = 0;
 
-    string decision = Str(body, "decision");
-    string comments = Str(body, "comments");
-    int? vendor = NullableInt(body, "vendor_id");
-
-    if (req <= 0)
+    if (!int.TryParse(
+        Convert.ToString(ctx.Session["staff_id"]),
+        out staffId))
     {
-        Write(ctx, 400, new
+        Write(ctx, 401, new
         {
-            error = "รหัสใบขอซื้อไม่ถูกต้อง"
+            success = false,
+            error = "ข้อมูลผู้ใช้งานไม่ถูกต้อง"
         });
         return;
     }
 
-    if (String.IsNullOrWhiteSpace(decision))
+    string role = Convert.ToString(
+        ctx.Session["staff_role"]).Trim();
+
+    bool hasDepartmentId = int.TryParse(
+        Convert.ToString(ctx.Session["department_id"]),
+        out departmentId);
+
+    // กำหนดขอบเขตสิทธิ์ในการบันทึกรับสินค้า
+    bool canReceiveAll =
+        role == "CEO" ||
+        role == "CFO" ||
+        role == "Procurement";
+
+    bool isManager = role == "Manager";
+    bool isStaff = role == "Staff";
+
+    if (!canReceiveAll && !isManager && !isStaff)
     {
-        Write(ctx, 400, new
+        Write(ctx, 403, new
         {
-            error = "กรุณาระบุผลการพิจารณา"
+            success = false,
+            error = "ไม่มีสิทธิ์บันทึกการรับสินค้า"
         });
         return;
     }
 
-    decision = decision.Trim();
-
-    if (!decision.Equals("Approved",
-            StringComparison.OrdinalIgnoreCase) &&
-        !decision.Equals("Rejected",
-            StringComparison.OrdinalIgnoreCase))
+    if (isManager && !hasDepartmentId)
     {
-        Write(ctx, 400, new
+        Write(ctx, 403, new
         {
-            error = "decision ต้องเป็น Approved หรือ Rejected"
+            success = false,
+            error = "ไม่พบแผนกของผู้ใช้งาน"
         });
         return;
     }
 
-    if (decision.Equals("Rejected",
-            StringComparison.OrdinalIgnoreCase) &&
-        String.IsNullOrWhiteSpace(comments))
+    int poId = Int(body, "po_id");
+    int lineNo = Int(body, "line_no");
+    int receivedQty = Int(body, "received_quantity");
+
+    if (poId <= 0 || lineNo <= 0 || receivedQty <= 0)
     {
         Write(ctx, 400, new
         {
-            error = "กรุณาระบุเหตุผลกรณีไม่อนุมัติ"
+            success = false,
+            error = "กรุณาระบุ PO รายการสินค้า และจำนวนรับให้ถูกต้อง"
         });
         return;
     }
 
-    // 3. อ่าน VAT
-    decimal vatRate = 7.00m;
-    object vatValue;
-
-    if (body.TryGetValue("vat_rate", out vatValue) &&
-        vatValue != null &&
-        !String.IsNullOrWhiteSpace(Convert.ToString(vatValue)))
+    using (SqlTransaction tx =
+        c.BeginTransaction(IsolationLevel.Serializable))
     {
-        if (!Decimal.TryParse(
-            Convert.ToString(vatValue),
-            System.Globalization.NumberStyles.Number,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out vatRate))
+        try
         {
-            Write(ctx, 400, new
+            int orderedQty;
+            int alreadyReceived;
+            int requesterStaffId;
+            int requesterDepartmentId;
+            string poStatus;
+
+            // ตรวจสอบ PO พร้อมล็อกข้อมูลระหว่างทำ Transaction
+            // และดึงเจ้าของ Requisition เพื่อใช้ตรวจสิทธิ์
+            using (SqlCommand cmd = new SqlCommand(@"
+                SELECT
+                    po.status,
+                    pi.quantity,
+                    r.requester_staff_id,
+                    s.department_id
+                FROM dbo.purchase_orders AS po
+                    WITH (UPDLOCK, HOLDLOCK)
+                INNER JOIN dbo.po_items AS pi
+                    WITH (UPDLOCK, HOLDLOCK)
+                    ON pi.po_id = po.po_id
+                INNER JOIN dbo.requisitions AS r
+                    ON r.requisition_id = po.requisition_id
+                INNER JOIN dbo.staff AS s
+                    ON s.staff_id = r.requester_staff_id
+                WHERE po.po_id = @po_id
+                  AND pi.line_no = @line_no;
+            ", c, tx))
             {
-                error = "Invalid vat_rate"
+                cmd.Parameters.Add("@po_id", SqlDbType.Int).Value = poId;
+                cmd.Parameters.Add("@line_no", SqlDbType.Int).Value = lineNo;
+
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    if (!reader.Read())
+                    {
+                        throw new InvalidOperationException(
+                            "ไม่พบ PO หรือรายการสินค้าที่ระบุ");
+                    }
+
+                    poStatus = Convert.ToString(reader["status"]);
+                    orderedQty = Convert.ToInt32(reader["quantity"]);
+                    requesterStaffId = Convert.ToInt32(
+                        reader["requester_staff_id"]);
+                    requesterDepartmentId = Convert.ToInt32(
+                        reader["department_id"]);
+                }
+            }
+
+            // ตรวจสิทธิ์กับข้อมูลจริงในฐานข้อมูล
+            // ไม่เชื่อ department หรือ requester ที่ส่งมาจากหน้าเว็บ
+            if (isStaff && requesterStaffId != staffId)
+            {
+                throw new UnauthorizedAccessException(
+                    "Staff สามารถรับสินค้าได้เฉพาะ PO ของรายการที่ตนเองร้องขอ");
+            }
+
+            if (isManager &&
+                requesterDepartmentId != departmentId)
+            {
+                throw new UnauthorizedAccessException(
+                    "Manager สามารถรับสินค้าได้เฉพาะ PO ในแผนกของตนเอง");
+            }
+
+            if (poStatus == "Cancelled" ||
+                poStatus == "Rejected")
+            {
+                throw new InvalidOperationException(
+                    "ไม่สามารถรับสินค้าจาก PO ที่ยกเลิกหรือปฏิเสธแล้ว");
+            }
+
+            // รวมจำนวนรับสะสมของรายการสินค้า
+            using (SqlCommand cmd = new SqlCommand(@"
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN received_status IN ('Accepted', 'Partial')
+                            THEN COALESCE(received_quantity, 0)
+                        ELSE 0
+                    END
+                ), 0)
+                FROM dbo.goods_receipts WITH (UPDLOCK, HOLDLOCK)
+                WHERE po_id = @po_id
+                  AND line_no = @line_no;
+            ", c, tx))
+            {
+                cmd.Parameters.Add("@po_id", SqlDbType.Int).Value = poId;
+                cmd.Parameters.Add("@line_no", SqlDbType.Int).Value = lineNo;
+
+                alreadyReceived = Convert.ToInt32(
+                    cmd.ExecuteScalar());
+            }
+
+            if (alreadyReceived + receivedQty > orderedQty)
+            {
+                throw new InvalidOperationException(
+                    "จำนวนรับสะสมจะเกินจำนวนที่สั่ง " +
+                    "(สั่ง " + orderedQty +
+                    ", รับแล้ว " + alreadyReceived + ")");
+            }
+
+            int newTotal = alreadyReceived + receivedQty;
+
+            string receiptStatus =
+                newTotal >= orderedQty ? "Accepted" : "Partial";
+
+            // บันทึกประวัติการรับสินค้า
+            using (SqlCommand cmd = new SqlCommand(@"
+                INSERT INTO dbo.goods_receipts
+                (
+                    po_id,
+                    line_no,
+                    received_by_staff_id,
+                    received_date,
+                    received_status,
+                    received_quantity
+                )
+                VALUES
+                (
+                    @po_id,
+                    @line_no,
+                    @staff_id,
+                    CONVERT(date, SYSDATETIME()),
+                    @status,
+                    @qty
+                );
+            ", c, tx))
+            {
+                cmd.Parameters.Add("@po_id", SqlDbType.Int).Value = poId;
+                cmd.Parameters.Add("@line_no", SqlDbType.Int).Value = lineNo;
+                cmd.Parameters.Add("@staff_id", SqlDbType.Int).Value = staffId;
+                cmd.Parameters.Add("@status", SqlDbType.VarChar, 30)
+                    .Value = receiptStatus;
+                cmd.Parameters.Add("@qty", SqlDbType.Int).Value = receivedQty;
+
+                cmd.ExecuteNonQuery();
+            }
+
+            // อัปเดตสถานะ PO ตามจำนวนรับสะสมทุกบรรทัด
+            using (SqlCommand cmd = new SqlCommand(@"
+                ;WITH ReceivedByLine AS
+                (
+                    SELECT
+                        pi.po_id,
+                        pi.line_no,
+                        pi.quantity,
+                        COALESCE(SUM(
+                            CASE
+                                WHEN gr.received_status IN ('Accepted', 'Partial')
+                                    THEN COALESCE(gr.received_quantity, 0)
+                                ELSE 0
+                            END
+                        ), 0) AS received_qty
+                    FROM dbo.po_items AS pi
+                    LEFT JOIN dbo.goods_receipts AS gr
+                        ON gr.po_id = pi.po_id
+                       AND gr.line_no = pi.line_no
+                    WHERE pi.po_id = @po_id
+                    GROUP BY
+                        pi.po_id,
+                        pi.line_no,
+                        pi.quantity
+                )
+                UPDATE po
+                SET status =
+                    CASE
+                        WHEN NOT EXISTS
+                        (
+                            SELECT 1
+                            FROM ReceivedByLine
+                            WHERE received_qty < quantity
+                        )
+                            THEN 'Received'
+                        WHEN EXISTS
+                        (
+                            SELECT 1
+                            FROM ReceivedByLine
+                            WHERE received_qty > 0
+                        )
+                            THEN 'Partially Received'
+                        ELSE 'Issued'
+                    END
+                FROM dbo.purchase_orders AS po
+                WHERE po.po_id = @po_id
+                  AND po.status <> 'Cancelled'
+                  AND po.status <> 'Rejected';
+            ", c, tx))
+            {
+                cmd.Parameters.Add("@po_id", SqlDbType.Int).Value = poId;
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+
+            Write(ctx, 200, new
+            {
+                success = true,
+                message = "บันทึกการรับสินค้าสำเร็จ",
+                po_id = poId,
+                line_no = lineNo,
+                received_quantity = receivedQty,
+                cumulative_received = newTotal,
+                ordered_quantity = orderedQty,
+                received_status = receiptStatus
             });
             return;
         }
-    }
-
-    if (vatRate < 0 || vatRate > 100)
-    {
-        Write(ctx, 400, new
+        catch (UnauthorizedAccessException ex)
         {
-            error = "vat_rate ต้องอยู่ระหว่าง 0 ถึง 100"
-        });
-        return;
-    }
+            tx.Rollback();
 
-    // 4. เรียก Stored Procedure
-    using (SqlCommand cmd =
-        new SqlCommand("dbo.sp_approve_purchase_order", c))
-    {
-        cmd.CommandType = CommandType.StoredProcedure;
-
-        cmd.Parameters.Add("@requisition_id", SqlDbType.Int).Value =
-            req;
-
-        cmd.Parameters.Add("@approver_staff_id", SqlDbType.Int).Value =
-            staff;
-
-        cmd.Parameters.Add("@decision", SqlDbType.VarChar, 10).Value =
-            decision.Equals("Approved",
-                StringComparison.OrdinalIgnoreCase)
-                ? "Approved"
-                : "Rejected";
-
-        cmd.Parameters.Add("@vendor_id", SqlDbType.Int).Value =
-            (object)vendor ?? DBNull.Value;
-
-        SqlParameter vatParam =
-            cmd.Parameters.Add("@vat_rate", SqlDbType.Decimal);
-
-        vatParam.Precision = 5;
-        vatParam.Scale = 2;
-        vatParam.Value = vatRate;
-
-        cmd.Parameters.Add("@comments", SqlDbType.NVarChar, 1000).Value =
-            String.IsNullOrWhiteSpace(comments)
-                ? (object)DBNull.Value
-                : comments.Trim();
-
-        DataTable result = new DataTable();
-
-        using (SqlDataAdapter da = new SqlDataAdapter(cmd))
-        {
-            da.Fill(result);
+            Write(ctx, 403, new
+            {
+                success = false,
+                error = ex.Message
+            });
+            return;
         }
+        catch (InvalidOperationException ex)
+        {
+            tx.Rollback();
 
-        Write(ctx, 200, Rows(result));
-        return;
+            Write(ctx, 400, new
+            {
+                success = false,
+                error = ex.Message
+            });
+            return;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 }
+
 
 
         }

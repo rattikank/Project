@@ -104,11 +104,12 @@
                                     <th>รับแล้ว</th>
                                     <th>คงเหลือ</th>
                                     <th>สถานะ</th>
+                                    <th>จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody id="gr-list">
                                 <tr>
-                                    <td colspan="8">กำลังโหลดข้อมูล...</td>
+                                    <td colspan="9">กำลังโหลดข้อมูล...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -118,9 +119,75 @@
                         <span id="gr-count">กำลังโหลดข้อมูล...</span>
                         <div id="gr-pagination" class="pagination"></div>
                     </div>
+
+
+
                 </section>
+                <!-- Modal: บันทึกรับสินค้า -->
+                <div id="gr-modal" class="gr-modal" hidden>
+                    <div class="gr-modal-backdrop" data-close-modal></div>
+
+                    <section class="gr-modal-panel"
+                             role="dialog"
+                             aria-modal="true"
+                             aria-labelledby="gr-modal-title">
+
+                        <div class="gr-modal-header">
+                            <div>
+                                <h2 id="gr-modal-title">บันทึกรับสินค้า</h2>
+                                <p id="gr-modal-po">PO-000000</p>
+                            </div>
+                            <button type="button"
+                                    class="btn secondary"
+                                    data-close-modal
+                                    aria-label="ปิดหน้าต่าง">
+                                ✕
+                            </button>
+                        </div>
+
+                        <div id="gr-modal-info" class="gr-modal-info"></div>
+
+                        <form id="gr-receive-form">
+                            <div class="gr-form-group">
+                                <label for="gr-line-select">รายการสินค้า</label>
+                                <select id="gr-line-select" required>
+                                    <option value="">เลือกรายการสินค้า</option>
+                                </select>
+                            </div>
+
+                            <div id="gr-line-info" class="gr-line-info">
+                                กรุณาเลือกรายการสินค้า
+                            </div>
+
+                            <div class="gr-form-group">
+                                <label for="gr-receive-qty">จำนวนที่รับครั้งนี้</label>
+                                <input id="gr-receive-qty"
+                                       type="number"
+                                       min="1"
+                                       step="1"
+                                       required
+                                       placeholder="กรอกจำนวนสินค้า">
+                                <small id="gr-qty-hint"></small>
+                            </div>
+
+                            <div id="gr-modal-error" role="alert"></div>
+
+                            <div class="gr-modal-actions">
+                                <button type="button"
+                                        class="btn secondary"
+                                        data-close-modal>
+                                    ยกเลิก
+                                </button>
+                                <button id="gr-save-btn" class="btn" type="submit">
+                                    บันทึกการรับสินค้า
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
 
                 <div id="gr-notice" class="notice"></div>
+
             </section>
         </main>
     </div>
