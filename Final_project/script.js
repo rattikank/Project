@@ -1,4 +1,4 @@
-﻿
+
 
 // Dashboard Summary Section
 
@@ -1779,12 +1779,26 @@ async function openGoodsReceiptModal(poId) {
     lineSelect.innerHTML = '<option value="">กำลังโหลด...</option>';
     lineInfo.textContent = "กำลังโหลดรายการสินค้า...";
     saveButton.disabled = true;
+
+    // Render the receive dialog as a direct child of <body> so it cannot be
+    // constrained by the page content/table layout or an ancestor stacking context.
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
     modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    modal.style.setProperty("position", "fixed", "important");
+    modal.style.setProperty("inset", "0", "important");
+    modal.style.setProperty("z-index", "99999", "important");
+    modal.style.setProperty("display", "flex", "important");
+    modal.style.setProperty("align-items", "center", "important");
+    modal.style.setProperty("justify-content", "center", "important");
+    document.body.style.setProperty("overflow", "hidden", "important");
 
     try {
         const response = await fetch(
-            "Api.ashx?action=receivable-po-items",
-            { credentials: "same-origin" }
+            "Api.ashx?action=receivable-po-items&po_id=" + encodeURIComponent(grSelectedPO),
+            { credentials: "same-origin", cache: "no-store" }
         );
 
         if (!response.ok) {
@@ -1792,6 +1806,10 @@ async function openGoodsReceiptModal(poId) {
         }
 
         const items = await response.json();
+
+        if (!Array.isArray(items)) {
+            throw new Error(items.error || items.message || "รูปแบบข้อมูลรายการสินค้าไม่ถูกต้อง");
+        }
 
         grReceivableItems = items.filter(
             item => String(item.po_id) === grSelectedPO
@@ -1878,7 +1896,13 @@ function updateGRLineInfo() {
 
 function closeGoodsReceiptModal() {
     const modal = document.getElementById("gr-modal");
-    if (modal) modal.hidden = true;
+    if (modal) {
+        modal.hidden = true;
+        modal.setAttribute("aria-hidden", "true");
+        // Keep the inline display rule in sync with the hidden attribute.
+        modal.style.setProperty("display", "none", "important");
+    }
+    document.body.style.removeProperty("overflow");
     grSelectedPO = null;
     grReceivableItems = [];
 }
@@ -1890,6 +1914,13 @@ function initGoodsReceiptModal() {
 
     if (!modal || modal.dataset.initialized === "true") return;
     modal.dataset.initialized = "true";
+
+    // Keep the dialog outside the content section so fixed positioning is always
+    // relative to the browser viewport, not the table or page layout.
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+    modal.setAttribute("aria-hidden", "true");
 
     document.addEventListener("click", event => {
         const button = event.target.closest("[data-receive-po]");
@@ -1904,6 +1935,12 @@ function initGoodsReceiptModal() {
     });
 
     lineSelect.addEventListener("change", updateGRLineInfo);
+
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !modal.hidden) {
+            closeGoodsReceiptModal();
+        }
+    });
 
     modal.addEventListener("click", event => {
         if (event.target.classList.contains("gr-modal-backdrop")) {
@@ -1958,7 +1995,7 @@ function initGoodsReceiptModal() {
             const notice = document.getElementById("gr-notice");
             if (notice) {
                 notice.textContent =
-                    `บันทึกรับสินค้า PO-${String(grSelectedPO || "").padStart(6, "0")} สำเร็จ`;
+                    `บันทึกรับสินค้า PO-${String(savedPO || "").padStart(6, "0")} สำเร็จ`;
             }
 
             await loadGoodsReceiptList();
