@@ -1334,6 +1334,15 @@ case "receivable-po-items":
         break;
     }
 
+    // 2.1 ถ้าหน้าเว็บส่ง po_id มา ให้จำกัดผลลัพธ์เฉพาะ PO นั้น
+    // แปลงเป็น int ก่อนนำไปต่อ SQL เพื่อไม่รับ SQL จาก query string โดยตรง
+    int requestedPoId;
+    string poFilter = "";
+    if (int.TryParse(ctx.Request.QueryString["po_id"], out requestedPoId) && requestedPoId > 0)
+    {
+        poFilter = " AND po.po_id = " + requestedPoId;
+    }
+
     // 3. ดึงรายการสินค้าที่รับไม่ครบ
     DataTable receivableItems = Query(c, @"
         ;WITH ReceiptByLine AS
@@ -1411,7 +1420,7 @@ case "receivable-po-items":
 
         WHERE COALESCE(po.status, '') NOT IN ('Cancelled', 'Rejected')
           AND COALESCE(rb.received_quantity, 0) < pi.quantity
-    " + accessCondition + @"
+    " + accessCondition + poFilter + @"
 
         ORDER BY po.po_date DESC, po.po_id DESC, pi.line_no ASC;
     ");
