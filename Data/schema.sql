@@ -1,5 +1,4 @@
-USE final_project;
-GO
+
 
 ------------- สร้าง table
 
